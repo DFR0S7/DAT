@@ -100,6 +100,7 @@ client.on('interactionCreate', async (interaction) => {
 
 client.on('guildMemberAdd', async (member) => {
   try {
+    if (!member?.user) return;
     if (member.user.bot) return;
     const dm = await member.user.createDM().catch(() => null);
     if (!dm) return;
@@ -110,7 +111,7 @@ client.on('guildMemberAdd', async (member) => {
       `Run \`/help\` any time for a full overview.`
     );
   } catch (err) {
-    console.error('Failed to DM new member:', err.message);
+    console.error('guildMemberAdd error:', err.message, err.stack);
   }
 });
 
