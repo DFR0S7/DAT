@@ -1,5 +1,5 @@
 // index.js
-import 'dotenv/config';
+import http from 'http';
 import axios from 'axios';
 import { createClient } from '@supabase/supabase-js';
 import { Client, GatewayIntentBits, MessageFlags, REST, Routes, SlashCommandBuilder } from 'discord.js';
@@ -70,6 +70,13 @@ async function start() {
   }
   client.login(process.env.DISCORD_TOKEN);
 }
+
+// ── HTTP server (required for Railway to generate a domain) ──────────────────
+const PORT = process.env.PORT || 3000;
+http.createServer((req, res) => {
+  res.writeHead(200);
+  res.end('ok');
+}).listen(PORT, () => console.log(`HTTP server listening on port ${PORT}`));
 
 // ── Self-ping (Railway) ───────────────────────────────────────────────────────
 if (process.env.SELF_PING_URL) {
