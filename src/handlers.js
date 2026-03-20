@@ -459,7 +459,7 @@ export async function handleButton(interaction) {
     modal.addComponents(new ActionRowBuilder().addComponents(
       new TextInputBuilder()
         .setCustomId('advance_time_input')
-        .setLabel('Day + time (e.g. Fri 9pm) or leave blank to clear')
+        .setLabel('Day + time (e.g. Fri 9pm) or blank')
         .setStyle(TextInputStyle.Short).setRequired(false).setMaxLength(20)
         .setValue(advRow?.advance_time ?? '')
     ));
@@ -517,14 +517,26 @@ export async function handleButton(interaction) {
   if (id.startsWith('sl_advance_complete_')) {
     const enc        = id.replace('sl_advance_complete_', '');
     const leagueName = rows.find(r => encodeLeague(r.league_name) === enc)?.league_name ?? enc;
+    const advType    = types.find(t => t.is_advance);
 
-    await supabase.from('shortlist').update({ state: 'active' })
-      .eq('user_id', userId).eq('league_name', leagueName).eq('state', 'done');
+    // Reset all non-Advance active/done items back to active
+    const nonAdvTypeIds = types.filter(t => !t.is_advance).map(t => t.id);
+    if (nonAdvTypeIds.length) {
+      await supabase.from('shortlist')
+        .update({ state: 'active' })
+        .eq('user_id', userId)
+        .eq('league_name', leagueName)
+        .in('type_id', nonAdvTypeIds)
+        .in('state', ['active', 'done']);
+    }
 
-    const advType = types.find(t => t.is_advance);
+    // Reset Advance itself to active (keep the time)
     if (advType) {
-      await supabase.from('shortlist').update({ advance_time: null })
-        .eq('user_id', userId).eq('league_name', leagueName).eq('type_id', advType.id);
+      await supabase.from('shortlist')
+        .update({ state: 'active' })
+        .eq('user_id', userId)
+        .eq('league_name', leagueName)
+        .eq('type_id', advType.id);
     }
 
     const { rows: fresh } = await getShortlistData(userId, types);
