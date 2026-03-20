@@ -719,5 +719,9 @@ export async function handleMessage(message) {
     .from('shortlist').select('id').eq('user_id', userId).limit(1);
   if (!existing?.length && !onboardingSessions.has(userId)) {
     await startOnboarding(message.channel, userId);
+    return;
   }
+
+  // Returning user sent a message — nudge them to use the commands
+  await message.reply('Use `/shortlist` to open your tracker, or `/help\` for a full overview.');
 }
