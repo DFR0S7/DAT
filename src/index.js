@@ -101,7 +101,8 @@ client.on('interactionCreate', async (interaction) => {
 client.on('guildMemberAdd', async (member) => {
   try {
     if (member.user.bot) return;
-    const dm = await member.user.createDM();
+    const dm = await member.user.createDM().catch(() => null);
+    if (!dm) return;
     await dm.send(
       `👋 **Welcome to DAT — Dynasty Advance Tracker!**\n\n` +
       `DAT helps you track where every dynasty league is in its current sim cycle, all from your DMs.\n\n` +
