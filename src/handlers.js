@@ -137,20 +137,21 @@ function buildShortlistComponents(types, rows, state) {
   const out = [];
 
   if (state.step === 'main') {
-    // Row 1: ✏️ ➕ 🏷️ 🗑️ ✅ (always shown)
+    // Row 1: Update + Advance
     out.push(new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId('sl_btn_edit').setLabel('✏️ Update').setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId('sl_btn_advance').setLabel('✅ Advance').setStyle(ButtonStyle.Success),
+    ));
+    // Row 2: Add, Rename, Remove (+ Reorder if multiple leagues)
+    const row2 = [
       new ButtonBuilder().setCustomId('sl_btn_add').setLabel('➕ Add').setStyle(ButtonStyle.Primary),
       new ButtonBuilder().setCustomId('sl_btn_rename').setLabel('🏷️ Rename').setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId('sl_btn_remove').setLabel('🗑️ Remove').setStyle(ButtonStyle.Danger),
-      new ButtonBuilder().setCustomId('sl_btn_advance').setLabel('✅ Advance').setStyle(ButtonStyle.Success),
-    ));
-    // Row 2: reorder button (only if multiple leagues)
+    ];
     if (leagues.length > 1) {
-      out.push(new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('sl_btn_reorder').setLabel('↕️ Reorder').setStyle(ButtonStyle.Secondary)
-      ));
+      row2.push(new ButtonBuilder().setCustomId('sl_btn_reorder').setLabel('↕️ Reorder').setStyle(ButtonStyle.Secondary));
     }
+    out.push(new ActionRowBuilder().addComponents(row2));
 
   } else if (state.step === 'advance_pick') {
     out.push(leaguePicker('sl_advance_league', leagues, 'Complete Advance for which league?'));
