@@ -353,7 +353,7 @@ export async function handleCommand(interaction, client) {
   // /shortlist
   if (commandName === 'shortlist') {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-    const channel = interaction.channel;
+    const channel = await interaction.user.createDM();
     const types   = await getOrSeedShortlistTypes(userId);
     const { rows } = await getShortlistData(userId, types);
 
@@ -405,8 +405,9 @@ export async function handleCommand(interaction, client) {
   // /setup
   if (commandName === 'setup') {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    const dmChannel = await interaction.user.createDM();
     onboardingSessions.set(userId, { step: 'awaiting_leagues' });
-    await interaction.channel.send(
+    await dmChannel.send(
       `➕ **Add leagues to your shortlist**\n\n` +
       `Type your league names separated by commas, or one at a time.\n` +
       `Already-existing leagues will be skipped automatically.`
@@ -468,7 +469,7 @@ export async function handleButton(interaction) {
   await interaction.deferUpdate();
   const types   = await getOrSeedShortlistTypes(userId);
   let { rows }  = await getShortlistData(userId, types);
-  const channel = interaction.channel;
+  const channel = await interaction.user.createDM();
 
   if (id === 'sl_back') {
     activeEdits.set(userId, { type: 'shortlist', step: 'main' });
@@ -549,7 +550,7 @@ export async function handleSelect(interaction) {
 
   const types   = await getOrSeedShortlistTypes(userId);
   let { rows }  = await getShortlistData(userId, types);
-  const channel = interaction.channel;
+  const channel = await interaction.user.createDM();
 
   if (id === 'sl_action') {
     if (value === 'edit') {
@@ -657,7 +658,7 @@ export async function handleModal(interaction) {
     await seedLeagueRows(userId, leagueName, types, rows);
     const { rows: fresh } = await getShortlistData(userId, types);
     activeEdits.set(userId, { type: 'shortlist', step: 'main' });
-    await postShortlist(interaction.channel, types, fresh, { step: 'main' }, userId);
+    await postShortlist(await interaction.user.createDM(), types, fresh, { step: 'main' }, userId);
     return interaction.editReply({ content: `✅ **${leagueName}** added.` });
   }
 
@@ -676,7 +677,7 @@ export async function handleModal(interaction) {
     await supabase.from('shortlist').update({ league_name: newName }).eq('user_id', userId).eq('league_name', oldName);
     const { rows: fresh } = await getShortlistData(userId, types);
     activeEdits.set(userId, { type: 'shortlist', step: 'main' });
-    await postShortlist(interaction.channel, types, fresh, { step: 'main' }, userId);
+    await postShortlist(await interaction.user.createDM(), types, fresh, { step: 'main' }, userId);
     return;
   }
 
@@ -696,7 +697,7 @@ export async function handleModal(interaction) {
 
     const { rows: fresh } = await getShortlistData(userId, types);
     activeEdits.set(userId, { type: 'shortlist', step: 'edit_toggles', leagueName });
-    await postShortlist(interaction.channel, types, fresh, { step: 'edit_toggles', leagueName }, userId);
+    await postShortlist(await interaction.user.createDM(), types, fresh, { step: 'edit_toggles', leagueName }, userId);
     return;
   }
 }
