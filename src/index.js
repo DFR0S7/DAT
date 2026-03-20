@@ -9,6 +9,7 @@ const client = new Client({
   intents: [
     GatewayIntentBits.DirectMessages,
     GatewayIntentBits.MessageContent,
+    GatewayIntentBits.GuildMembers,
   ],
 });
 
@@ -16,11 +17,13 @@ const client = new Client({
 const commands = [
   new SlashCommandBuilder()
     .setName('shortlist')
-    .setDescription('View and manage your dynasty cycle tracker'),
+    .setDescription('View and manage your dynasty cycle tracker')
+    .setDMPermission(true),
 
   new SlashCommandBuilder()
     .setName('shortlist-config')
     .setDescription('Manage shortlist item types (add, remove, rename)')
+    .setDMPermission(true)
     .addStringOption(o => o.setName('action').setDescription('What to do').setRequired(true)
       .addChoices(
         { name: 'Add type',    value: 'add'    },
@@ -33,15 +36,18 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName('setup')
-    .setDescription('Add leagues or redo the setup flow'),
+    .setDescription('Add leagues or redo the setup flow')
+    .setDMPermission(true),
 
   new SlashCommandBuilder()
     .setName('help')
-    .setDescription('How DAT works'),
+    .setDescription('How DAT works')
+    .setDMPermission(true),
 
   new SlashCommandBuilder()
     .setName('feedback')
     .setDescription('Send feedback or a bug report to the developer')
+    .setDMPermission(true)
     .addStringOption(o => o.setName('message').setDescription('Your feedback').setRequired(true)),
 
 ].map(c => c.toJSON());
@@ -89,6 +95,21 @@ client.on('interactionCreate', async (interaction) => {
     const msg = { content: 'Something went wrong. Please try again.', flags: MessageFlags.Ephemeral };
     if (interaction.deferred)      interaction.editReply(msg).catch(() => {});
     else if (!interaction.replied) interaction.reply(msg).catch(() => {});
+  }
+});
+
+client.on('guildMemberAdd', async (member) => {
+  try {
+    if (member.user.bot) return;
+    const dm = await member.user.createDM();
+    await dm.send(
+      `👋 **Welcome to DAT — Dynasty Advance Tracker!**\n\n` +
+      `DAT helps you track where every dynasty league is in its current sim cycle, all from your DMs.\n\n` +
+      `To get started, just type anything here and I'll walk you through setup — or run \`/shortlist\` in any server we share.\n\n` +
+      `Run \`/help\` any time for a full overview.`
+    );
+  } catch (err) {
+    console.error('Failed to DM new member:', err.message);
   }
 });
 
