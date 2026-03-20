@@ -268,7 +268,7 @@ export const onboardingSessions = new Map();
 
 const WELCOME_MSG = `👋 **Welcome to DAT — Dynasty Advance Tracker!**
 
-DAT helps you track where every dynasty league is in its current sim cycle, all from your DMs. No server required.
+DAT helps you track your tasks in every dynasty league with an easy reset button when a league advances, all from your DMs. No server required.
 
 **How it works**
 → Each league has item types: **Advance ⏰**, **Game 🏈**, **Recruiting 🎯**, **Other 📋**

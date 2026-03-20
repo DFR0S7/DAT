@@ -37,7 +37,7 @@ export function shortlistRowText(rank, leagueName, leagueItems, allTypes, advanc
 
   const active  = allTypes.filter(t => leagueItems.find(i => i.type_id === t.id && i.state === 'active')).map(t => t.icon).join(' ');
   const done    = allTypes.filter(t => leagueItems.find(i => i.type_id === t.id && i.state === 'done')).map(t => `${t.icon}✅`).join(' ');
-  const paused  = allTypes.filter(t => leagueItems.find(i => i.type_id === t.id && i.state === 'paused')).map(t => `⏸️${t.icon}`).join(' ');
+  const paused  = allTypes.filter(t => leagueItems.find(i => i.type_id === t.id && i.state === 'paused')).map(t => `${t.icon}⏸️`).join(' ');
 
   const parts   = [active, done, paused].filter(Boolean).join('  ');
   const timeTag = advanceTime ? `  ·  ${advanceTime}` : '';
