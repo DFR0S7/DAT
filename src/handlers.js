@@ -137,18 +137,25 @@ function buildShortlistComponents(types, rows, state) {
   const out = [];
 
   if (state.step === 'main') {
-    const options = [
-      new StringSelectMenuOptionBuilder().setLabel('Update league').setValue('edit').setEmoji('✏️'),
-      new StringSelectMenuOptionBuilder().setLabel('Add league').setValue('add_league').setEmoji('➕'),
-      new StringSelectMenuOptionBuilder().setLabel('Rename league').setValue('rename_league').setEmoji('🏷️'),
-      new StringSelectMenuOptionBuilder().setLabel('Remove league').setValue('remove_league').setEmoji('🗑️'),
-    ];
-    if (leagues.length > 1) options.splice(1, 0,
-      new StringSelectMenuOptionBuilder().setLabel('Reorder leagues').setValue('reorder').setEmoji('↕️')
-    );
+    // Row 1: ✏️ ➕ 🏷️ 🗑️ ✅ (always shown)
     out.push(new ActionRowBuilder().addComponents(
-      new StringSelectMenuBuilder().setCustomId('sl_action').setPlaceholder('Choose an action…').addOptions(options)
+      new ButtonBuilder().setCustomId('sl_btn_edit').setLabel('✏️ Update').setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId('sl_btn_add').setLabel('➕ Add').setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId('sl_btn_rename').setLabel('🏷️ Rename').setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId('sl_btn_remove').setLabel('🗑️ Remove').setStyle(ButtonStyle.Danger),
+      new ButtonBuilder().setCustomId('sl_btn_advance').setLabel('✅ Advance').setStyle(ButtonStyle.Success),
     ));
+    // Row 2: reorder button (only if multiple leagues)
+    if (leagues.length > 1) {
+      out.push(new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('sl_btn_reorder').setLabel('↕️ Reorder').setStyle(ButtonStyle.Secondary)
+      ));
+    }
+
+  } else if (state.step === 'advance_pick') {
+    out.push(leaguePicker('sl_advance_league', leagues, 'Complete Advance for which league?'));
+    out.push(backRow());
+
 
   } else if (state.step === 'edit_pick') {
     out.push(leaguePicker('sl_edit_league', leagues, 'Pick a league to update…'));
@@ -216,13 +223,9 @@ function buildShortlistComponents(types, rows, state) {
         .setStyle(advTimeVal ? ButtonStyle.Primary : ButtonStyle.Secondary)
     ));
 
-    const actionBtns = [new ButtonBuilder().setCustomId('sl_back').setLabel('← Back').setStyle(ButtonStyle.Primary)];
-    if (advItem?.state === 'active') {
-      actionBtns.unshift(
-        new ButtonBuilder().setCustomId(`sl_advance_complete_${enc}`).setLabel('✅ Complete Advance').setStyle(ButtonStyle.Success)
-      );
-    }
-    out.push(new ActionRowBuilder().addComponents(actionBtns));
+    out.push(new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId('sl_back').setLabel('← Back').setStyle(ButtonStyle.Primary)
+    ));
 
   } else if (state.step === 'item_state_pick') {
     const item = rows.find(r => r.league_name === state.leagueName && r.type_id === state.typeId);
@@ -445,7 +448,16 @@ export async function handleButton(interaction) {
   const userId = interaction.user.id;
   if (!id.startsWith('sl_')) return;
 
-  // sl_set_time_ opens a modal — cannot deferUpdate before showModal
+  // sl_set_time_ and sl_btn_add open modals — cannot deferUpdate before showModal
+  if (id === 'sl_btn_add') {
+    const modal = new ModalBuilder().setCustomId('sl_add_league_modal').setTitle('Add League');
+    modal.addComponents(new ActionRowBuilder().addComponents(
+      new TextInputBuilder().setCustomId('league_name_input').setLabel('League name')
+        .setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(50)
+    ));
+    return interaction.showModal(modal);
+  }
+
   if (id.startsWith('sl_set_time_')) {
     const types = await getOrSeedShortlistTypes(userId);
     const { rows } = await getShortlistData(userId, types);
@@ -470,6 +482,33 @@ export async function handleButton(interaction) {
   const types   = await getOrSeedShortlistTypes(userId);
   let { rows }  = await getShortlistData(userId, types);
   const channel = await interaction.user.createDM();
+
+  // ── Main menu icon buttons ──
+  if (id === 'sl_btn_edit') {
+    activeEdits.set(userId, { type: 'shortlist', step: 'edit_pick' });
+    await postShortlist(channel, types, rows, { step: 'edit_pick' }, userId);
+    return;
+  }
+  if (id === 'sl_btn_rename') {
+    activeEdits.set(userId, { type: 'shortlist', step: 'rename_pick' });
+    await postShortlist(channel, types, rows, { step: 'rename_pick' }, userId);
+    return;
+  }
+  if (id === 'sl_btn_remove') {
+    activeEdits.set(userId, { type: 'shortlist', step: 'remove_pick' });
+    await postShortlist(channel, types, rows, { step: 'remove_pick' }, userId);
+    return;
+  }
+  if (id === 'sl_btn_reorder') {
+    activeEdits.set(userId, { type: 'shortlist', step: 'reorder_a' });
+    await postShortlist(channel, types, rows, { step: 'reorder_a' }, userId);
+    return;
+  }
+  if (id === 'sl_btn_advance') {
+    activeEdits.set(userId, { type: 'shortlist', step: 'advance_pick' });
+    await postShortlist(channel, types, rows, { step: 'advance_pick' }, userId);
+    return;
+  }
 
   if (id === 'sl_back') {
     activeEdits.set(userId, { type: 'shortlist', step: 'main' });
@@ -556,8 +595,8 @@ export async function handleSelect(interaction) {
   const value  = interaction.values[0];
   if (!id.startsWith('sl_')) return;
 
-  // add_league and sl_rename_pick need to showModal — can't deferUpdate first
-  const isModal = (id === 'sl_action' && value === 'add_league') || id === 'sl_rename_pick';
+  // sl_rename_pick needs to showModal — can't deferUpdate first
+  const isModal = id === 'sl_rename_pick';
   if (!isModal) await interaction.deferUpdate();
 
   const types   = await getOrSeedShortlistTypes(userId);
@@ -604,6 +643,25 @@ export async function handleSelect(interaction) {
 
   if (id === 'sl_remove_pick') {
     await supabase.from('shortlist').delete().eq('user_id', userId).eq('league_name', value);
+    const { rows: fresh } = await getShortlistData(userId, types);
+    activeEdits.set(userId, { type: 'shortlist', step: 'main' });
+    await postShortlist(channel, types, fresh, { step: 'main' }, userId);
+    return;
+  }
+
+  if (id === 'sl_advance_league') {
+    const leagueName = value;
+    const advType    = types.find(t => t.is_advance);
+    const nonAdvTypeIds = types.filter(t => !t.is_advance).map(t => t.id);
+    if (nonAdvTypeIds.length) {
+      await supabase.from('shortlist').update({ state: 'active' })
+        .eq('user_id', userId).eq('league_name', leagueName)
+        .in('type_id', nonAdvTypeIds).in('state', ['active', 'done']);
+    }
+    if (advType) {
+      await supabase.from('shortlist').update({ state: 'active' })
+        .eq('user_id', userId).eq('league_name', leagueName).eq('type_id', advType.id);
+    }
     const { rows: fresh } = await getShortlistData(userId, types);
     activeEdits.set(userId, { type: 'shortlist', step: 'main' });
     await postShortlist(channel, types, fresh, { step: 'main' }, userId);
