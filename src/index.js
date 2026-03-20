@@ -123,7 +123,7 @@ client.on('messageCreate', async (message) => {
 // ── Process error guards ───────────────────────────────────────────────────────
 process.on('uncaughtException',  err => console.error('Uncaught exception:', err.message));
 process.on('unhandledRejection', err => console.error('Unhandled rejection:', err?.message ?? err));
-client.on('error',      err => console.error('Discord client error:', err.message));
-client.on('shardError', err => console.error('Shard error:', err.message));
+client.on('error',      err => console.error('Discord client error:', err.stack ?? err.message));
+client.on('shardError', err => console.error('Shard error:', err.stack ?? err.message));
 
 start();
