@@ -14,7 +14,7 @@ import {
   TextInputStyle,
 } from 'discord.js';
 
-import { supabase } from './index.js';
+import { supabase } from './db.js';
 import { SHORTLIST_STARTER_TYPES, shortlistRowColor, shortlistRowText, encodeLeague } from './utils.js';
 
 export const activeEdits = new Map();

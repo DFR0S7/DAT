@@ -1,11 +1,8 @@
 // index.js
 import http from 'http';
 import axios from 'axios';
-import { createClient } from '@supabase/supabase-js';
 import { Client, GatewayIntentBits, MessageFlags, REST, Routes, SlashCommandBuilder } from 'discord.js';
-
-// ── Supabase client (exported so handlers.js can import it) ───────────────────
-export const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
+import { handleCommand, handleButton, handleSelect, handleModal, handleMessage } from './handlers.js';
 
 // ── Discord client ─────────────────────────────────────────────────────────────
 const client = new Client({
@@ -14,15 +11,6 @@ const client = new Client({
     GatewayIntentBits.MessageContent,
   ],
 });
-
-// ── Handlers (imported after supabase export is defined) ──────────────────────
-const {
-  handleCommand,
-  handleButton,
-  handleSelect,
-  handleModal,
-  handleMessage,
-} = await import('./handlers.js');
 
 // ── Slash command definitions ─────────────────────────────────────────────────
 const commands = [
