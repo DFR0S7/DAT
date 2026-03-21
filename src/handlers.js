@@ -276,6 +276,7 @@ function buildShortlistComponents(types, rows, state) {
     const STATE_STYLE  = { off: ButtonStyle.Secondary, active: ButtonStyle.Success, done: ButtonStyle.Success, paused: ButtonStyle.Primary };
     const STATE_PREFIX = { off: '⬜ ', active: '🟢 ', done: '✅ ', paused: '⏸️ ' };
 
+    // Item toggle buttons (row per 5)
     const itemBtns = types.map(t => {
       const item   = leagueItems.find(r => r.type_id === t.id);
       const iState = item?.state ?? 'off';
@@ -286,22 +287,30 @@ function buildShortlistComponents(types, rows, state) {
     });
     for (let i = 0; i < itemBtns.length; i += 5) out.push(new ActionRowBuilder().addComponents(itemBtns.slice(i, i + 5)));
 
-    const advTimeVal = advItem?.advance_time ?? null;
+    // Timer button — shows active timer label if set
     const advDueVal  = advItem?.advance_due ?? null;
+    const advTimeVal = advItem?.advance_time ?? null;
     const dueMs      = advDueVal ? new Date(advDueVal).getTime() : null;
-    const nowMs      = Date.now();
-    const hoursLeft  = dueMs ? Math.max(0, Math.round((dueMs - nowMs) / 3600000)) : null;
+    const hoursLeft  = dueMs ? Math.max(0, Math.round((dueMs - Date.now()) / 3600000)) : null;
+    const timerLbl   = hoursLeft !== null ? `⏱️ ${hoursLeft}h left` : (advTimeVal ? `⏱️ ${advTimeVal}` : '⏱️ Set timer');
+    const timerStyle = dueMs && dueMs > Date.now() ? ButtonStyle.Success : (advTimeVal ? ButtonStyle.Primary : ButtonStyle.Secondary);
 
-    // Manual advance time button
     out.push(new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId(`sl_set_time_${enc}`)
-        .setLabel(advTimeVal ? `🕐 ${advTimeVal}` : '🕐 Set advance time')
-        .setStyle(advTimeVal ? ButtonStyle.Primary : ButtonStyle.Secondary)
+      new ButtonBuilder().setCustomId(`sl_timer_menu_${enc}`).setLabel(timerLbl).setStyle(timerStyle),
+      new ButtonBuilder().setCustomId('sl_back').setLabel('← Back').setStyle(ButtonStyle.Primary),
     ));
 
-    // One-shot timer buttons
+  } else if (state.step === 'timer_pick') {
+    // Sub-step: one-shot timers + day picker + back
+    const enc = encodeLeague(state.leagueName);
+    const advItem = rows.find(r => r.league_name === state.leagueName && types.find(t => t.is_advance && t.id === r.type_id));
+    const advDueVal = advItem?.advance_due ?? null;
+    const dueMs     = advDueVal ? new Date(advDueVal).getTime() : null;
+    const nowMs     = Date.now();
+    const hoursLeft = dueMs ? Math.max(0, Math.round((dueMs - nowMs) / 3600000)) : null;
     const timerLabel = hoursLeft !== null ? `⏱️ ${hoursLeft}h left` : null;
+
+    // One-shot timers + clear
     out.push(new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId(`sl_timer_${enc}_24`)
@@ -321,7 +330,7 @@ function buildShortlistComponents(types, rows, state) {
         .setStyle(ButtonStyle.Danger),
     ));
 
-    // Weekly schedule — day picker
+    // Weekly schedule day picker (Sun–Thu)
     out.push(new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId(`sl_sched_${enc}_0`).setLabel('Sun').setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId(`sl_sched_${enc}_1`).setLabel('Mon').setStyle(ButtonStyle.Secondary),
@@ -329,13 +338,11 @@ function buildShortlistComponents(types, rows, state) {
       new ButtonBuilder().setCustomId(`sl_sched_${enc}_3`).setLabel('Wed').setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId(`sl_sched_${enc}_4`).setLabel('Thu').setStyle(ButtonStyle.Secondary),
     ));
+    // Fri–Sat + back
     out.push(new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId(`sl_sched_${enc}_5`).setLabel('Fri').setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId(`sl_sched_${enc}_6`).setLabel('Sat').setStyle(ButtonStyle.Secondary),
-    ));
-
-    out.push(new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId('sl_back').setLabel('← Back').setStyle(ButtonStyle.Primary)
+      new ButtonBuilder().setCustomId(`sl_back_to_toggles_${enc}`).setLabel('← Back').setStyle(ButtonStyle.Primary),
     ));
 
   } else if (state.step === 'item_state_pick') {
@@ -560,6 +567,33 @@ export async function handleButton(interaction) {
   if (!id.startsWith('sl_')) return;
 
   // sl_set_time_, sl_btn_add, sl_sched_ open modals — cannot deferUpdate before showModal
+
+  // sl_timer_menu_{enc} — open timer sub-step (needs deferUpdate, so placed before modal block)
+  if (id.startsWith('sl_timer_menu_')) {
+    await interaction.deferUpdate();
+    const typesT   = await getOrSeedShortlistTypes(userId);
+    const { rows: rowsT } = await getShortlistData(userId, typesT);
+    const channelT = await interaction.user.createDM();
+    const enc        = id.replace('sl_timer_menu_', '');
+    const leagueName = rowsT.find(r => encodeLeague(r.league_name) === enc)?.league_name ?? enc;
+    activeEdits.set(userId, { type: 'shortlist', step: 'timer_pick', leagueName });
+    await postShortlist(channelT, typesT, rowsT, { step: 'timer_pick', leagueName }, userId);
+    return;
+  }
+
+  // sl_back_to_toggles_{enc} — back from timer_pick to edit_toggles
+  if (id.startsWith('sl_back_to_toggles_')) {
+    await interaction.deferUpdate();
+    const typesT   = await getOrSeedShortlistTypes(userId);
+    const { rows: rowsT } = await getShortlistData(userId, typesT);
+    const channelT = await interaction.user.createDM();
+    const enc        = id.replace('sl_back_to_toggles_', '');
+    const leagueName = rowsT.find(r => encodeLeague(r.league_name) === enc)?.league_name ?? enc;
+    activeEdits.set(userId, { type: 'shortlist', step: 'edit_toggles', leagueName });
+    await postShortlist(channelT, typesT, rowsT, { step: 'edit_toggles', leagueName }, userId);
+    return;
+  }
+
   if (id.startsWith('sl_sched_')) {
     const parts    = id.replace('sl_sched_', '').split('_');
     const dayIndex = parts[parts.length - 1];
@@ -718,8 +752,8 @@ export async function handleButton(interaction) {
     }
 
     const { rows: fresh } = await getShortlistData(userId, types);
-    activeEdits.set(userId, { type: 'shortlist', step: 'edit_toggles', leagueName });
-    await postShortlist(channel, types, fresh, { step: 'edit_toggles', leagueName }, userId);
+    activeEdits.set(userId, { type: 'shortlist', step: 'timer_pick', leagueName });
+    await postShortlist(channel, types, fresh, { step: 'timer_pick', leagueName }, userId);
     return;
   }
 
@@ -773,14 +807,21 @@ export async function handleSelect(interaction) {
   let { rows }  = await getShortlistData(userId, types);
   const channel = await interaction.user.createDM();
 
+  // Helper: update the shortlist message via the interaction
+  const reply = (state, r = rows) => {
+    const { content } = buildShortlistContent(types, r, state);
+    const components  = buildShortlistComponents(types, r, state);
+    return interaction.editReply({ content, components });
+  };
+
   if (id === 'sl_action') {
     if (value === 'edit') {
       activeEdits.set(userId, { type: 'shortlist', step: 'edit_pick' });
-      await postShortlist(channel, types, rows, { step: 'edit_pick' }, userId);
+      await reply({ step: 'edit_pick' });
     }
     if (value === 'reorder') {
       activeEdits.set(userId, { type: 'shortlist', step: 'reorder_a' });
-      await postShortlist(channel, types, rows, { step: 'reorder_a' }, userId);
+      await reply({ step: 'reorder_a' });
     }
     if (value === 'add_league') {
       const modal = new ModalBuilder().setCustomId('sl_add_league_modal').setTitle('Add League');
@@ -792,11 +833,11 @@ export async function handleSelect(interaction) {
     }
     if (value === 'rename_league') {
       activeEdits.set(userId, { type: 'shortlist', step: 'rename_pick' });
-      await postShortlist(channel, types, rows, { step: 'rename_pick' }, userId);
+      await reply({ step: 'rename_pick' });
     }
     if (value === 'remove_league') {
       activeEdits.set(userId, { type: 'shortlist', step: 'remove_pick' });
-      await postShortlist(channel, types, rows, { step: 'remove_pick' }, userId);
+      await reply({ step: 'remove_pick' });
     }
     return;
   }
@@ -815,7 +856,7 @@ export async function handleSelect(interaction) {
     await supabase.from('shortlist').delete().eq('user_id', userId).eq('league_name', value);
     const { rows: fresh } = await getShortlistData(userId, types);
     activeEdits.set(userId, { type: 'shortlist', step: 'main' });
-    await postShortlist(channel, types, fresh, { step: 'main' }, userId);
+    await reply({ step: 'main' }, fresh);
     return;
   }
 
@@ -834,19 +875,20 @@ export async function handleSelect(interaction) {
     }
     const { rows: fresh } = await getShortlistData(userId, types);
     activeEdits.set(userId, { type: 'shortlist', step: 'main' });
-    await postShortlist(channel, types, fresh, { step: 'main' }, userId);
+    await reply({ step: 'main' }, fresh);
     return;
   }
 
   if (id === 'sl_edit_league') {
-    activeEdits.set(userId, { type: 'shortlist', step: 'edit_toggles', leagueName: value });
-    await postShortlist(channel, types, rows, { step: 'edit_toggles', leagueName: value }, userId);
+    const leagueName = value;
+    activeEdits.set(userId, { type: 'shortlist', step: 'edit_toggles', leagueName });
+    await reply({ step: 'edit_toggles', leagueName });
     return;
   }
 
   if (id === 'sl_reorder_a') {
     activeEdits.set(userId, { type: 'shortlist', step: 'reorder_b', leagueNameA: value });
-    await postShortlist(channel, types, rows, { step: 'reorder_b', leagueNameA: value }, userId);
+    await reply({ step: 'reorder_b', leagueNameA: value });
     return;
   }
 
@@ -870,7 +912,7 @@ export async function handleSelect(interaction) {
     }
     const { rows: fresh } = await getShortlistData(userId, types);
     activeEdits.set(userId, { type: 'shortlist', step: 'main' });
-    await postShortlist(channel, types, fresh, { step: 'main' }, userId);
+    await reply({ step: 'main' }, fresh);
     return;
   }
 }

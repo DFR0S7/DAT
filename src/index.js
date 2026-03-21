@@ -3,6 +3,7 @@ import http from 'http';
 import axios from 'axios';
 import { Client, GatewayIntentBits, MessageFlags, REST, Routes, SlashCommandBuilder } from 'discord.js';
 import { handleCommand, handleButton, handleSelect, handleModal, handleMessage, parseTimeString, nextOccurrence, normalizeTz } from './handlers.js';
+import { supabase } from './db.js';
 
 // ── Discord client ─────────────────────────────────────────────────────────────
 const client = new Client({
