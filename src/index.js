@@ -2,7 +2,7 @@
 import http from 'http';
 import axios from 'axios';
 import { Client, GatewayIntentBits, MessageFlags, REST, Routes, SlashCommandBuilder } from 'discord.js';
-import { handleCommand, handleButton, handleSelect, handleModal, handleMessage, parseTimeString, nextOccurrence } from './handlers.js';
+import { handleCommand, handleButton, handleSelect, handleModal, handleMessage, parseTimeString, nextOccurrence, normalizeTz } from './handlers.js';
 
 // ── Discord client ─────────────────────────────────────────────────────────────
 const client = new Client({
@@ -121,7 +121,7 @@ async function runAutoAdvanceCheck() {
           const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
           const dayIdx = days.indexOf(parts[0]);
           const parsed = parseTimeString(parts[1]);
-          const tz     = parts[2];
+          const tz     = normalizeTz(parts[2]) ?? parts[2];
           if (dayIdx !== -1 && parsed) {
             const next = nextOccurrence(dayIdx, parsed.hours, parsed.minutes, tz);
             if (next) nextDue = next.toISOString();

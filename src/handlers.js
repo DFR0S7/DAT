@@ -25,6 +25,24 @@ export const activeEdits = new Map();
 
 const TZ_OFFSETS = { ET: -5, CT: -6, MT: -7, PT: -8, GMT: 0 };
 
+// Normalize timezone input → canonical abbreviation
+export function normalizeTz(input) {
+  const s = input.trim().toUpperCase().replace(/\s+/g, '');
+  const map = {
+    // Eastern
+    ET: 'ET', EST: 'ET', EDT: 'ET', EASTERN: 'ET', EASTERNTIME: 'ET',
+    // Central
+    CT: 'CT', CST: 'CT', CDT: 'CT', CENTRAL: 'CT', CENTRALTIME: 'CT',
+    // Mountain
+    MT: 'MT', MST: 'MT', MDT: 'MT', MOUNTAIN: 'MT', MOUNTAINTIME: 'MT',
+    // Pacific
+    PT: 'PT', PST: 'PT', PDT: 'PT', PACIFIC: 'PT', PACIFICTIME: 'PT',
+    // GMT / UTC
+    GMT: 'GMT', UTC: 'GMT', Z: 'GMT',
+  };
+  return map[s] ?? null;
+}
+
 // Parse "9pm", "8:30pm", "21:00" → { hours, minutes } in 24h
 export function parseTimeString(str) {
   str = str.trim().toLowerCase();
@@ -48,8 +66,9 @@ export function parseTimeString(str) {
 
 // Returns the next UTC Date for a given weekday + local time + tz abbreviation
 export function nextOccurrence(dayOfWeek, hours, minutes, tzAbbr) {
-  const offset = TZ_OFFSETS[tzAbbr.toUpperCase()];
-  if (offset === undefined) return null;
+  const canonical = normalizeTz(tzAbbr);
+  if (!canonical) return null;
+  const offset = TZ_OFFSETS[canonical];
 
   const now = new Date();
   // Work in UTC, shifting for the timezone offset
@@ -557,7 +576,7 @@ export async function handleButton(interaction) {
       new ActionRowBuilder().addComponents(
         new TextInputBuilder()
           .setCustomId('sched_time_input')
-          .setLabel(`Time on ${dayName} (e.g. 9pm, 8:30pm)`)
+          .setLabel(`Next advance time on ${dayName} (e.g. 9pm)`)
           .setStyle(TextInputStyle.Short)
           .setRequired(true)
           .setMaxLength(10)
@@ -909,7 +928,8 @@ export async function handleModal(interaction) {
     const dayIndex = parseInt(rest[rest.length - 1]);
     const enc      = rest.slice(0, rest.length - 2); // strip _{dayIndex}
     const timeStr  = interaction.fields.getTextInputValue('sched_time_input').trim();
-    const tzStr    = interaction.fields.getTextInputValue('sched_tz_input').trim().toUpperCase();
+    const tzRaw    = interaction.fields.getTextInputValue('sched_tz_input').trim();
+    const tzStr    = normalizeTz(tzRaw) ?? tzRaw.toUpperCase();
 
     const types = await getOrSeedShortlistTypes(userId);
     const { rows } = await getShortlistData(userId, types);
@@ -928,12 +948,12 @@ export async function handleModal(interaction) {
     // Compute next occurrence of dayIndex at parsedTime in tzStr
     const dueDate = nextOccurrence(dayIndex, parsedTime.hours, parsedTime.minutes, tzStr);
     if (!dueDate) {
-      await interaction.followUp({ content: `❌ Unknown timezone **${tzStr}** — use ET, CT, MT, PT, or GMT.`, flags: 64 });
+      await interaction.followUp({ content: `❌ Unknown timezone **${tzRaw}** — try ET, CT, MT, PT, EST, CST, PST, or UTC.`, flags: 64 });
       return;
     }
 
     const days  = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-    const label = `${days[dayIndex]} ${timeStr} ${tzStr}`;
+    const label = `${days[dayIndex]} ${timeStr} ${tzStr}`; // tzStr is already canonical
 
     await supabase.from('shortlist').update({
       advance_due:  dueDate.toISOString(),
