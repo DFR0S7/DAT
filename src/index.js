@@ -154,6 +154,60 @@ All tasks have been reset for the new cycle. Good luck! 🏈`);
 setInterval(runAutoAdvanceCheck, 5 * 60 * 1000); // every 5 minutes
 runAutoAdvanceCheck(); // run once on startup to catch anything missed
 
+// ── Daily ping loop (9am ET = 14:00 UTC, checks every 5 min) ─────────────────
+const PING_HOUR_UTC = 14; // 9am ET (UTC-5)
+
+async function runDailyPing() {
+  try {
+    const now   = new Date();
+    const hour  = now.getUTCHours();
+    const min   = now.getUTCMinutes();
+    if (hour !== PING_HOUR_UTC || min >= 5) return; // only fire in the 9:00–9:04 ET window
+
+    const today = now.toISOString().slice(0, 10); // YYYY-MM-DD
+
+    // Fetch all users who haven't been pinged today
+    const { data: configs } = await supabase
+      .from('shortlist_config')
+      .select('user_id, last_ping')
+      .or(`last_ping.is.null,last_ping.neq.${today}`);
+
+    if (!configs?.length) return;
+
+    for (const cfg of configs) {
+      try {
+        // Skip users who have an active advance_due timer — auto-advance already bumps them
+        const { data: activeTimers } = await supabase
+          .from('shortlist')
+          .select('id')
+          .eq('user_id', cfg.user_id)
+          .not('advance_due', 'is', null)
+          .gt('advance_due', new Date().toISOString())
+          .limit(1);
+
+        if (activeTimers?.length) continue;
+
+        const user = await client.users.fetch(cfg.user_id);
+        const dm   = await user.createDM();
+        const msg  = await dm.send('\u200b'); // zero-width space — invisible ping
+        await msg.delete().catch(() => {});   // delete immediately
+
+        await supabase.from('shortlist_config')
+          .update({ last_ping: today })
+          .eq('user_id', cfg.user_id);
+
+        console.log(`Daily ping sent to ${cfg.user_id}`);
+      } catch (err) {
+        console.error(`Daily ping failed for ${cfg.user_id}:`, err.message);
+      }
+    }
+  } catch (err) {
+    console.error('Daily ping loop error:', err.message);
+  }
+}
+
+setInterval(runDailyPing, 5 * 60 * 1000);
+
 // ── Discord events ─────────────────────────────────────────────────────────────
 client.once('clientReady', () => console.log('DAT online:', client.user.tag));
 
