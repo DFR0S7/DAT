@@ -217,11 +217,38 @@ function buildShortlistComponents(types, rows, state) {
     for (let i = 0; i < itemBtns.length; i += 5) out.push(new ActionRowBuilder().addComponents(itemBtns.slice(i, i + 5)));
 
     const advTimeVal = advItem?.advance_time ?? null;
+    const advDueVal  = advItem?.advance_due ?? null;
+
+    // Manual advance time button
     out.push(new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId(`sl_set_time_${enc}`)
         .setLabel(advTimeVal ? `🕐 ${advTimeVal}` : '🕐 Set advance time')
         .setStyle(advTimeVal ? ButtonStyle.Primary : ButtonStyle.Secondary)
+    ));
+
+    // Auto-timer buttons — highlight the active one if set
+    const dueMs      = advDueVal ? new Date(advDueVal).getTime() : null;
+    const nowMs      = Date.now();
+    const hoursLeft  = dueMs ? Math.max(0, Math.round((dueMs - nowMs) / 3600000)) : null;
+    const timerLabel = hoursLeft !== null ? `⏱️ ${hoursLeft}h left` : null;
+    out.push(new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`sl_timer_${enc}_24`)
+        .setLabel(timerLabel && hoursLeft <= 24 ? timerLabel : '⏱️ 24h')
+        .setStyle(dueMs && (dueMs - nowMs) <= 24*3600000 && dueMs > nowMs ? ButtonStyle.Success : ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setCustomId(`sl_timer_${enc}_48`)
+        .setLabel(timerLabel && hoursLeft > 24 && hoursLeft <= 48 ? timerLabel : '⏱️ 48h')
+        .setStyle(dueMs && (dueMs - nowMs) > 24*3600000 && (dueMs - nowMs) <= 48*3600000 ? ButtonStyle.Success : ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setCustomId(`sl_timer_${enc}_72`)
+        .setLabel(timerLabel && hoursLeft > 48 ? timerLabel : '⏱️ 72h')
+        .setStyle(dueMs && (dueMs - nowMs) > 48*3600000 ? ButtonStyle.Success : ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setCustomId(`sl_timer_${enc}_clear`)
+        .setLabel('⏱️ Clear')
+        .setStyle(ButtonStyle.Danger),
     ));
 
     out.push(new ActionRowBuilder().addComponents(
@@ -551,6 +578,31 @@ export async function handleButton(interaction) {
     const leagueName = rows.find(r => encodeLeague(r.league_name) === enc)?.league_name ?? enc;
     activeEdits.set(userId, { type: 'shortlist', step: 'edit_toggles', leagueName });
     await postShortlist(channel, types, rows, { step: 'edit_toggles', leagueName }, userId);
+    return;
+  }
+
+  // sl_timer_{enc}_{hours|clear} — set or clear auto-advance timer
+  if (id.startsWith('sl_timer_')) {
+    const parts      = id.replace('sl_timer_', '').split('_');
+    const hoursOrCmd = parts[parts.length - 1];
+    const enc        = parts.slice(0, parts.length - 1).join('_');
+    const leagueName = rows.find(r => encodeLeague(r.league_name) === enc)?.league_name ?? enc;
+    const advType    = types.find(t => t.is_advance);
+    const advRow     = advType && rows.find(r => r.league_name === leagueName && r.type_id === advType.id);
+
+    if (advRow) {
+      if (hoursOrCmd === 'clear') {
+        await supabase.from('shortlist').update({ advance_due: null }).eq('id', advRow.id);
+      } else {
+        const hours   = parseInt(hoursOrCmd);
+        const dueDate = new Date(Date.now() + hours * 3600 * 1000).toISOString();
+        await supabase.from('shortlist').update({ advance_due: dueDate }).eq('id', advRow.id);
+      }
+    }
+
+    const { rows: fresh } = await getShortlistData(userId, types);
+    activeEdits.set(userId, { type: 'shortlist', step: 'edit_toggles', leagueName });
+    await postShortlist(channel, types, fresh, { step: 'edit_toggles', leagueName }, userId);
     return;
   }
 

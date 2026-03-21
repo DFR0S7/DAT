@@ -81,6 +81,63 @@ if (process.env.SELF_PING_URL) {
   }, 3 * 60 * 1000);
 }
 
+// ── Auto-advance polling loop (every 5 minutes) ──────────────────────────────
+async function runAutoAdvanceCheck() {
+  try {
+    // Find all advance rows with an expired due time
+    const { data: dueRows } = await supabase
+      .from('shortlist')
+      .select('*, shortlist_types!inner(is_advance, user_id)')
+      .eq('shortlist_types.is_advance', true)
+      .eq('state', 'active')
+      .not('advance_due', 'is', null)
+      .lte('advance_due', new Date().toISOString());
+
+    if (!dueRows?.length) return;
+
+    for (const advRow of dueRows) {
+      const userId     = advRow.user_id;
+      const leagueName = advRow.league_name;
+
+      // Get all types for this user
+      const { data: types } = await supabase
+        .from('shortlist_types').select('*').eq('user_id', userId).order('sort_order');
+      if (!types?.length) continue;
+
+      // Reset all non-Advance active/done items back to active
+      const nonAdvTypeIds = types.filter(t => !t.is_advance).map(t => t.id);
+      if (nonAdvTypeIds.length) {
+        await supabase.from('shortlist').update({ state: 'active' })
+          .eq('user_id', userId).eq('league_name', leagueName)
+          .in('type_id', nonAdvTypeIds).in('state', ['active', 'done']);
+      }
+
+      // Reset Advance itself — keep advance_time, clear advance_due
+      await supabase.from('shortlist')
+        .update({ state: 'active', advance_due: null })
+        .eq('id', advRow.id);
+
+      // DM the user
+      try {
+        const user = await client.users.fetch(userId);
+        const dm   = await user.createDM();
+        await dm.send(`⏱️ **Auto-advance fired for ${leagueName}!**
+
+All tasks have been reset for the new cycle. Good luck! 🏈`);
+      } catch (err) {
+        console.error(`Failed to DM user ${userId} for auto-advance:`, err.message);
+      }
+
+      console.log(`Auto-advance fired: ${leagueName} for user ${userId}`);
+    }
+  } catch (err) {
+    console.error('Auto-advance poll error:', err.message);
+  }
+}
+
+setInterval(runAutoAdvanceCheck, 5 * 60 * 1000); // every 5 minutes
+runAutoAdvanceCheck(); // run once on startup to catch anything missed
+
 // ── Discord events ─────────────────────────────────────────────────────────────
 client.once('clientReady', () => console.log('DAT online:', client.user.tag));
 
