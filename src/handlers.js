@@ -20,6 +20,57 @@ import { SHORTLIST_STARTER_TYPES, shortlistRowColor, shortlistRowText, encodeLea
 export const activeEdits = new Map();
 
 // ─────────────────────────────────────────────────────────────────────────────
+// TIME / SCHEDULE HELPERS
+// ─────────────────────────────────────────────────────────────────────────────
+
+const TZ_OFFSETS = { ET: -5, CT: -6, MT: -7, PT: -8, GMT: 0 };
+
+// Parse "9pm", "8:30pm", "21:00" → { hours, minutes } in 24h
+export function parseTimeString(str) {
+  str = str.trim().toLowerCase();
+  const ampm = /^(\d{1,2})(?::(\d{2}))?\s*(am|pm)$/.exec(str);
+  if (ampm) {
+    let h = parseInt(ampm[1]);
+    const m = parseInt(ampm[2] ?? '0');
+    if (ampm[3] === 'pm' && h !== 12) h += 12;
+    if (ampm[3] === 'am' && h === 12) h = 0;
+    if (h < 0 || h > 23 || m < 0 || m > 59) return null;
+    return { hours: h, minutes: m };
+  }
+  const mil = /^(\d{1,2}):(\d{2})$/.exec(str);
+  if (mil) {
+    const h = parseInt(mil[1]), m = parseInt(mil[2]);
+    if (h < 0 || h > 23 || m < 0 || m > 59) return null;
+    return { hours: h, minutes: m };
+  }
+  return null;
+}
+
+// Returns the next UTC Date for a given weekday + local time + tz abbreviation
+export function nextOccurrence(dayOfWeek, hours, minutes, tzAbbr) {
+  const offset = TZ_OFFSETS[tzAbbr.toUpperCase()];
+  if (offset === undefined) return null;
+
+  const now = new Date();
+  // Work in UTC, shifting for the timezone offset
+  const localNow = new Date(now.getTime() + offset * 3600 * 1000);
+
+  // Build a candidate date: this week's dayOfWeek at the given local time
+  const candidate = new Date(localNow);
+  candidate.setUTCHours(hours, minutes, 0, 0);
+  const diff = (dayOfWeek - localNow.getUTCDay() + 7) % 7;
+  candidate.setUTCDate(candidate.getUTCDate() + diff);
+
+  // If the candidate is in the past (or within 60s), push to next week
+  if (candidate.getTime() <= now.getTime() + 60000) {
+    candidate.setUTCDate(candidate.getUTCDate() + 7);
+  }
+
+  // Convert back to UTC by subtracting the offset
+  return new Date(candidate.getTime() - offset * 3600 * 1000);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // DB HELPERS
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -218,6 +269,9 @@ function buildShortlistComponents(types, rows, state) {
 
     const advTimeVal = advItem?.advance_time ?? null;
     const advDueVal  = advItem?.advance_due ?? null;
+    const dueMs      = advDueVal ? new Date(advDueVal).getTime() : null;
+    const nowMs      = Date.now();
+    const hoursLeft  = dueMs ? Math.max(0, Math.round((dueMs - nowMs) / 3600000)) : null;
 
     // Manual advance time button
     out.push(new ActionRowBuilder().addComponents(
@@ -227,10 +281,7 @@ function buildShortlistComponents(types, rows, state) {
         .setStyle(advTimeVal ? ButtonStyle.Primary : ButtonStyle.Secondary)
     ));
 
-    // Auto-timer buttons — highlight the active one if set
-    const dueMs      = advDueVal ? new Date(advDueVal).getTime() : null;
-    const nowMs      = Date.now();
-    const hoursLeft  = dueMs ? Math.max(0, Math.round((dueMs - nowMs) / 3600000)) : null;
+    // One-shot timer buttons
     const timerLabel = hoursLeft !== null ? `⏱️ ${hoursLeft}h left` : null;
     out.push(new ActionRowBuilder().addComponents(
       new ButtonBuilder()
@@ -249,6 +300,19 @@ function buildShortlistComponents(types, rows, state) {
         .setCustomId(`sl_timer_${enc}_clear`)
         .setLabel('⏱️ Clear')
         .setStyle(ButtonStyle.Danger),
+    ));
+
+    // Weekly schedule — day picker
+    out.push(new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(`sl_sched_${enc}_0`).setLabel('Sun').setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId(`sl_sched_${enc}_1`).setLabel('Mon').setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId(`sl_sched_${enc}_2`).setLabel('Tue').setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId(`sl_sched_${enc}_3`).setLabel('Wed').setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId(`sl_sched_${enc}_4`).setLabel('Thu').setStyle(ButtonStyle.Secondary),
+    ));
+    out.push(new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(`sl_sched_${enc}_5`).setLabel('Fri').setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId(`sl_sched_${enc}_6`).setLabel('Sat').setStyle(ButtonStyle.Secondary),
     ));
 
     out.push(new ActionRowBuilder().addComponents(
@@ -476,7 +540,41 @@ export async function handleButton(interaction) {
   const userId = interaction.user.id;
   if (!id.startsWith('sl_')) return;
 
-  // sl_set_time_ and sl_btn_add open modals — cannot deferUpdate before showModal
+  // sl_set_time_, sl_btn_add, sl_sched_ open modals — cannot deferUpdate before showModal
+  if (id.startsWith('sl_sched_')) {
+    const parts    = id.replace('sl_sched_', '').split('_');
+    const dayIndex = parts[parts.length - 1];
+    const enc      = parts.slice(0, parts.length - 1).join('_');
+    const leagueName = rows.find(r => encodeLeague(r.league_name) === enc)?.league_name ?? enc;
+    const days     = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+    const dayName  = days[parseInt(dayIndex)];
+    const titleName = leagueName.length > 20 ? leagueName.slice(0, 17) + '...' : leagueName;
+
+    const modal = new ModalBuilder()
+      .setCustomId(`sl_sched_modal_${enc}_${dayIndex}`)
+      .setTitle(`Schedule — ${titleName}`);
+    modal.addComponents(
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId('sched_time_input')
+          .setLabel(`Time on ${dayName} (e.g. 9pm, 8:30pm)`)
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true)
+          .setMaxLength(10)
+      ),
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId('sched_tz_input')
+          .setLabel('Timezone (ET, CT, MT, PT, GMT)')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true)
+          .setMaxLength(5)
+          .setValue('ET')
+      )
+    );
+    return interaction.showModal(modal);
+  }
+
   if (id === 'sl_btn_add') {
     const modal = new ModalBuilder().setCustomId('sl_add_league_modal').setTitle('Add League');
     modal.addComponents(new ActionRowBuilder().addComponents(
@@ -804,8 +902,51 @@ export async function handleModal(interaction) {
     return;
   }
 
+  // Weekly schedule modal — parse day + time + tz, compute next occurrence
+  if (id.startsWith('sl_sched_modal_')) {
+    await interaction.deferUpdate();
+    const rest     = id.replace('sl_sched_modal_', '');
+    const dayIndex = parseInt(rest[rest.length - 1]);
+    const enc      = rest.slice(0, rest.length - 2); // strip _{dayIndex}
+    const timeStr  = interaction.fields.getTextInputValue('sched_time_input').trim();
+    const tzStr    = interaction.fields.getTextInputValue('sched_tz_input').trim().toUpperCase();
+
+    const types = await getOrSeedShortlistTypes(userId);
+    const { rows } = await getShortlistData(userId, types);
+    const leagueName = rows.find(r => encodeLeague(r.league_name) === enc)?.league_name ?? enc;
+    const advType    = types.find(t => t.is_advance);
+    const advRow     = advType && rows.find(r => r.league_name === leagueName && r.type_id === advType.id);
+    if (!advRow) return;
+
+    // Parse time string → { hours, minutes }
+    const parsedTime = parseTimeString(timeStr);
+    if (!parsedTime) {
+      await interaction.followUp({ content: `❌ Couldn't parse time **${timeStr}** — try something like \`9pm\` or \`8:30pm\`.`, flags: 64 });
+      return;
+    }
+
+    // Compute next occurrence of dayIndex at parsedTime in tzStr
+    const dueDate = nextOccurrence(dayIndex, parsedTime.hours, parsedTime.minutes, tzStr);
+    if (!dueDate) {
+      await interaction.followUp({ content: `❌ Unknown timezone **${tzStr}** — use ET, CT, MT, PT, or GMT.`, flags: 64 });
+      return;
+    }
+
+    const days  = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    const label = `${days[dayIndex]} ${timeStr} ${tzStr}`;
+
+    await supabase.from('shortlist').update({
+      advance_due:  dueDate.toISOString(),
+      advance_time: label,
+    }).eq('id', advRow.id);
+
+    const { rows: fresh } = await getShortlistData(userId, types);
+    activeEdits.set(userId, { type: 'shortlist', step: 'edit_toggles', leagueName });
+    await postShortlist(interaction.channel ?? await interaction.user.createDM(), types, fresh, { step: 'edit_toggles', leagueName }, userId);
+    return;
+  }
+
   // Set advance time
-  if (id.startsWith('sl_time_modal_')) {
     await interaction.deferUpdate();
     const enc        = id.replace('sl_time_modal_', '');
     const rawVal     = interaction.fields.getTextInputValue('advance_time_input').trim();

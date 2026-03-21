@@ -2,7 +2,7 @@
 import http from 'http';
 import axios from 'axios';
 import { Client, GatewayIntentBits, MessageFlags, REST, Routes, SlashCommandBuilder } from 'discord.js';
-import { handleCommand, handleButton, handleSelect, handleModal, handleMessage } from './handlers.js';
+import { handleCommand, handleButton, handleSelect, handleModal, handleMessage, parseTimeString, nextOccurrence } from './handlers.js';
 
 // ── Discord client ─────────────────────────────────────────────────────────────
 const client = new Client({
@@ -112,9 +112,24 @@ async function runAutoAdvanceCheck() {
           .in('type_id', nonAdvTypeIds).in('state', ['active', 'done']);
       }
 
-      // Reset Advance itself — keep advance_time, clear advance_due
+      // Reset Advance itself — keep advance_time, reschedule if it was a weekly timer
+      let nextDue = null;
+      if (advRow.advance_time) {
+        // Try to parse "Fri 9pm ET" style label back into a schedule
+        const parts = advRow.advance_time.trim().split(/\s+/);
+        if (parts.length === 3) {
+          const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+          const dayIdx = days.indexOf(parts[0]);
+          const parsed = parseTimeString(parts[1]);
+          const tz     = parts[2];
+          if (dayIdx !== -1 && parsed) {
+            const next = nextOccurrence(dayIdx, parsed.hours, parsed.minutes, tz);
+            if (next) nextDue = next.toISOString();
+          }
+        }
+      }
       await supabase.from('shortlist')
-        .update({ state: 'active', advance_due: null })
+        .update({ state: 'active', advance_due: nextDue })
         .eq('id', advRow.id);
 
       // DM the user
