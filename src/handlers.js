@@ -967,6 +967,7 @@ export async function handleModal(interaction) {
   }
 
   // Set advance time
+  if (id.startsWith('sl_time_modal_')) {
     await interaction.deferUpdate();
     const enc        = id.replace('sl_time_modal_', '');
     const rawVal     = interaction.fields.getTextInputValue('advance_time_input').trim();
