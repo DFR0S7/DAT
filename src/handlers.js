@@ -158,12 +158,27 @@ export async function postShortlist(channel, types, rows, activeState, userId) {
   const components  = buildShortlistComponents(types, rows, activeState ?? { step: 'main' });
   const payload     = { content, components };
 
-  if (userId) {
+  // For edit steps, edit in place — don't send a new message
+  const editSteps = ['edit_toggles', 'item_state_pick', 'edit_pick', 'rename_pick',
+                     'remove_pick', 'reorder_a', 'reorder_b', 'advance_pick', 'timer_pick'];
+  const isEditStep = editSteps.includes(activeState?.step);
+
+  if (isEditStep && userId) {
     const { data: cfg } = await supabase
       .from('shortlist_config').select('message_id, channel_id').eq('user_id', userId).single();
     if (cfg?.message_id && cfg.channel_id === channel.id) {
       const existing = await channel.messages.fetch(cfg.message_id).catch(() => null);
       if (existing) { await existing.edit(payload); return existing; }
+    }
+  }
+
+  // For main step — delete old message and send fresh so it's always last
+  if (userId) {
+    const { data: cfg } = await supabase
+      .from('shortlist_config').select('message_id, channel_id').eq('user_id', userId).single();
+    if (cfg?.message_id) {
+      const old = await channel.messages.fetch(cfg.message_id).catch(() => null);
+      if (old) await old.delete().catch(() => {});
     }
   }
 
@@ -197,7 +212,10 @@ function buildShortlistContent(types, rows, activeState) {
   });
 
   const isEditing = activeState && ['edit_toggles', 'item_state_pick'].includes(activeState.step);
-  const editingLine = isEditing ? `\n\n✏️ Updating **${activeState.leagueName}**` : '';
+  const isTimer   = activeState?.step === 'timer_pick';
+  let editingLine = '';
+  if (isEditing) editingLine = `\n\n✏️ Updating **${activeState.leagueName}**\n-# ⏱️ Set timer is optional — use it to auto-advance on a schedule or after X hours.`;
+  if (isTimer)   editingLine = `\n\n⏱️ **Set timer for ${activeState.leagueName}**\n-# Pick a day for weekly auto-advance, or choose 24h / 48h / 72h for a one-shot timer.`;
   const header = `📋 **Your Shortlist** — ${leagueNames.length} league${leagueNames.length !== 1 ? 's' : ''}`;
   return { content: header + '\n\n' + lines.join('\n') + editingLine };
 }
@@ -601,7 +619,9 @@ export async function handleButton(interaction) {
     const parts    = id.replace('sl_sched_', '').split('_');
     const dayIndex = parts[parts.length - 1];
     const enc      = parts.slice(0, parts.length - 1).join('_');
-    const leagueName = rows.find(r => encodeLeague(r.league_name) === enc)?.league_name ?? enc;
+    const schedTypes = await getOrSeedShortlistTypes(userId);
+    const { rows: schedRows } = await getShortlistData(userId, schedTypes);
+    const leagueName = schedRows.find(r => encodeLeague(r.league_name) === enc)?.league_name ?? enc;
     const days     = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
     const dayName  = days[parseInt(dayIndex)];
     const titleName = leagueName.length > 20 ? leagueName.slice(0, 17) + '...' : leagueName;
@@ -1053,6 +1073,7 @@ export async function handleMessage(message) {
     return;
   }
 
-  // Returning user sent a message — nudge them to use the commands
-  await message.reply('Use `/shortlist` to open your tracker, or `/help\` for a full overview.');
+  // Returning user sent a message — nudge them, then delete after 5s
+  const nudge = await message.reply('Use `/shortlist` to open your tracker, or `/help` for a full overview.');
+  setTimeout(() => nudge.delete().catch(() => {}), 60000);
 }
