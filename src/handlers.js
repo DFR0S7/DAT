@@ -5,7 +5,6 @@ import {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  EmbedBuilder,
   MessageFlags,
   ModalBuilder,
   StringSelectMenuBuilder,
@@ -22,6 +21,29 @@ export const activeEdits = new Map();
 // ─────────────────────────────────────────────────────────────────────────────
 // TIME / SCHEDULE HELPERS
 // ─────────────────────────────────────────────────────────────────────────────
+
+// DST-aware offset: check if current date is in DST (US DST: 2nd Sun March → 1st Sun Nov)
+function isDST() {
+  const now = new Date();
+  const jan = new Date(now.getFullYear(), 0, 1).getTimezoneOffset();
+  const jul = new Date(now.getFullYear(), 6, 1).getTimezoneOffset();
+  return Math.max(jan, jul) !== now.getTimezoneOffset()
+    // fallback for server (UTC): approximate US DST range
+    || (() => {
+      const m = now.getUTCMonth() + 1; // 1-12
+      const d = now.getUTCDate();
+      // DST approx: mid-March to early November
+      return (m > 3 && m < 11) || (m === 3 && d >= 8) || (m === 11 && d < 7);
+    })();
+}
+
+function getTzOffset(canonical) {
+  const base = { ET: -5, CT: -6, MT: -7, PT: -8, GMT: 0 };
+  const dst  = isDST();
+  // US timezones spring forward 1 hour during DST
+  if (dst && canonical !== 'GMT') return base[canonical] + 1;
+  return base[canonical];
+}
 
 const TZ_OFFSETS = { ET: -5, CT: -6, MT: -7, PT: -8, GMT: 0 };
 
@@ -68,7 +90,7 @@ export function parseTimeString(str) {
 export function nextOccurrence(dayOfWeek, hours, minutes, tzAbbr) {
   const canonical = normalizeTz(tzAbbr);
   if (!canonical) return null;
-  const offset = TZ_OFFSETS[canonical];
+  const offset = getTzOffset(canonical);
 
   const now = new Date();
   // Work in UTC, shifting for the timezone offset
@@ -310,11 +332,11 @@ function buildShortlistComponents(types, rows, state) {
 
     // Timer button — shows active timer label if set
     const advDueVal  = advItem?.advance_due ?? null;
-    const advTimeVal = advItem?.advance_time ?? null;
+    const advSchedVal = advItem?.advance_schedule ?? null;
     const dueMs      = advDueVal ? new Date(advDueVal).getTime() : null;
     const hoursLeft  = dueMs ? Math.max(0, Math.round((dueMs - Date.now()) / 3600000)) : null;
-    const timerLbl   = hoursLeft !== null ? `⏱️ ${hoursLeft}h left` : (advTimeVal ? `⏱️ ${advTimeVal}` : '⏱️ Set timer');
-    const timerStyle = dueMs && dueMs > Date.now() ? ButtonStyle.Success : (advTimeVal ? ButtonStyle.Primary : ButtonStyle.Secondary);
+    const timerLbl   = hoursLeft !== null ? `⏱️ ${hoursLeft}h left` : (advSchedVal ? `⏱️ ${advSchedVal}` : '⏱️ Set timer');
+    const timerStyle = dueMs && dueMs > Date.now() ? ButtonStyle.Success : (advSchedVal ? ButtonStyle.Primary : ButtonStyle.Secondary);
 
     out.push(new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId(`sl_timer_menu_${enc}`).setLabel(timerLbl).setStyle(timerStyle),
@@ -594,11 +616,11 @@ export async function handleButton(interaction) {
     await interaction.deferUpdate();
     const typesT   = await getOrSeedShortlistTypes(userId);
     const { rows: rowsT } = await getShortlistData(userId, typesT);
-    const channelT = await interaction.user.createDM();
     const enc        = id.replace('sl_timer_menu_', '');
     const leagueName = rowsT.find(r => encodeLeague(r.league_name) === enc)?.league_name ?? enc;
     activeEdits.set(userId, { type: 'shortlist', step: 'timer_pick', leagueName });
-    await postShortlist(channelT, typesT, rowsT, { step: 'timer_pick', leagueName }, userId);
+    const state = { step: 'timer_pick', leagueName };
+    await interaction.editReply({ content: buildShortlistContent(typesT, rowsT, state).content, components: buildShortlistComponents(typesT, rowsT, state) });
     return;
   }
 
@@ -607,11 +629,11 @@ export async function handleButton(interaction) {
     await interaction.deferUpdate();
     const typesT   = await getOrSeedShortlistTypes(userId);
     const { rows: rowsT } = await getShortlistData(userId, typesT);
-    const channelT = await interaction.user.createDM();
     const enc        = id.replace('sl_back_to_toggles_', '');
     const leagueName = rowsT.find(r => encodeLeague(r.league_name) === enc)?.league_name ?? enc;
     activeEdits.set(userId, { type: 'shortlist', step: 'edit_toggles', leagueName });
-    await postShortlist(channelT, typesT, rowsT, { step: 'edit_toggles', leagueName }, userId);
+    const state = { step: 'edit_toggles', leagueName };
+    await interaction.editReply({ content: buildShortlistContent(typesT, rowsT, state).content, components: buildShortlistComponents(typesT, rowsT, state) });
     return;
   }
 
@@ -685,37 +707,44 @@ export async function handleButton(interaction) {
   let { rows }  = await getShortlistData(userId, types);
   const channel = await interaction.user.createDM();
 
+  // Helper: update the shortlist message via the interaction
+  const reply = (state, r = rows) => {
+    const { content } = buildShortlistContent(types, r, state);
+    const components  = buildShortlistComponents(types, r, state);
+    return interaction.editReply({ content, components });
+  };
+
   // ── Main menu icon buttons ──
   if (id === 'sl_btn_edit') {
     activeEdits.set(userId, { type: 'shortlist', step: 'edit_pick' });
-    await postShortlist(channel, types, rows, { step: 'edit_pick' }, userId);
+    await reply({ step: 'edit_pick' });
     return;
   }
   if (id === 'sl_btn_rename') {
     activeEdits.set(userId, { type: 'shortlist', step: 'rename_pick' });
-    await postShortlist(channel, types, rows, { step: 'rename_pick' }, userId);
+    await reply({ step: 'rename_pick' });
     return;
   }
   if (id === 'sl_btn_remove') {
     activeEdits.set(userId, { type: 'shortlist', step: 'remove_pick' });
-    await postShortlist(channel, types, rows, { step: 'remove_pick' }, userId);
+    await reply({ step: 'remove_pick' });
     return;
   }
   if (id === 'sl_btn_reorder') {
     activeEdits.set(userId, { type: 'shortlist', step: 'reorder_a' });
-    await postShortlist(channel, types, rows, { step: 'reorder_a' }, userId);
+    await reply({ step: 'reorder_a' });
     return;
   }
   if (id === 'sl_btn_advance') {
     activeEdits.set(userId, { type: 'shortlist', step: 'advance_pick' });
-    await postShortlist(channel, types, rows, { step: 'advance_pick' }, userId);
+    await reply({ step: 'advance_pick' });
     return;
   }
 
   if (id === 'sl_back') {
     activeEdits.set(userId, { type: 'shortlist', step: 'main' });
-    const { content } = buildShortlistContent(types, rows);
-    return interaction.editReply({ content, components: buildShortlistComponents(types, rows, { step: 'main' }) });
+    await reply({ step: 'main' });
+    return;
   }
 
   if (id.startsWith('sl_select_')) {
@@ -724,7 +753,7 @@ export async function handleButton(interaction) {
     const enc        = parts.slice(0, parts.length - 1).join('_');
     const leagueName = rows.find(r => encodeLeague(r.league_name) === enc)?.league_name ?? enc;
     activeEdits.set(userId, { type: 'shortlist', step: 'item_state_pick', leagueName, typeId });
-    await postShortlist(channel, types, rows, { step: 'item_state_pick', leagueName, typeId }, userId);
+    await reply({ step: 'item_state_pick', leagueName, typeId });
     return;
   }
 
@@ -743,7 +772,7 @@ export async function handleButton(interaction) {
 
     const { rows: fresh } = await getShortlistData(userId, types);
     activeEdits.set(userId, { type: 'shortlist', step: 'edit_toggles', leagueName });
-    await postShortlist(channel, types, fresh, { step: 'edit_toggles', leagueName }, userId);
+    await reply({ step: 'edit_toggles', leagueName }, fresh);
     return;
   }
 
@@ -751,7 +780,7 @@ export async function handleButton(interaction) {
     const enc        = id.replace('sl_cancel_pick_', '');
     const leagueName = rows.find(r => encodeLeague(r.league_name) === enc)?.league_name ?? enc;
     activeEdits.set(userId, { type: 'shortlist', step: 'edit_toggles', leagueName });
-    await postShortlist(channel, types, rows, { step: 'edit_toggles', leagueName }, userId);
+    await reply({ step: 'edit_toggles', leagueName });
     return;
   }
 
@@ -766,7 +795,7 @@ export async function handleButton(interaction) {
 
     if (advRow) {
       if (hoursOrCmd === 'clear') {
-        await supabase.from('shortlist').update({ advance_due: null }).eq('id', advRow.id);
+        await supabase.from('shortlist').update({ advance_due: null, advance_schedule: null }).eq('id', advRow.id);
       } else {
         const hours   = parseInt(hoursOrCmd);
         const dueDate = new Date(Date.now() + hours * 3600 * 1000).toISOString();
@@ -776,7 +805,7 @@ export async function handleButton(interaction) {
 
     const { rows: fresh } = await getShortlistData(userId, types);
     activeEdits.set(userId, { type: 'shortlist', step: 'timer_pick', leagueName });
-    await postShortlist(channel, types, fresh, { step: 'timer_pick', leagueName }, userId);
+    await reply({ step: 'timer_pick', leagueName }, fresh);
     return;
   }
 
@@ -807,7 +836,7 @@ export async function handleButton(interaction) {
 
     const { rows: fresh } = await getShortlistData(userId, types);
     activeEdits.set(userId, { type: 'shortlist', step: 'main' });
-    await postShortlist(channel, types, fresh, { step: 'main' }, userId);
+    await reply({ step: 'main' }, fresh);
     return;
   }
 }
@@ -1017,12 +1046,12 @@ export async function handleModal(interaction) {
       return;
     }
 
-    const days  = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-    const label = `${days[dayIndex]} ${timeStr} ${tzStr}`; // tzStr is already canonical
+    const days     = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    const schedule = `${days[dayIndex]} ${timeStr} ${tzStr}`; // stored for rescheduling only
 
     await supabase.from('shortlist').update({
       advance_due:  dueDate.toISOString(),
-      advance_time: label,
+      advance_schedule: schedule, // separate from the user's advance_time note
     }).eq('id', advRow.id);
 
     const { rows: fresh } = await getShortlistData(userId, types);

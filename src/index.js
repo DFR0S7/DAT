@@ -85,14 +85,23 @@ if (process.env.SELF_PING_URL) {
 // ── Auto-advance polling loop (every 5 minutes) ──────────────────────────────
 async function runAutoAdvanceCheck() {
   try {
-    // Find all advance rows with an expired due time
+    const now = new Date().toISOString();
+
+    // Step 1: get all advance type IDs
+    const { data: advTypes } = await supabase
+      .from('shortlist_types').select('id, user_id').eq('is_advance', true);
+    if (!advTypes?.length) return;
+
+    const advTypeIds = advTypes.map(t => t.id);
+
+    // Step 2: find expired advance rows
     const { data: dueRows } = await supabase
       .from('shortlist')
-      .select('*, shortlist_types!inner(is_advance, user_id)')
-      .eq('shortlist_types.is_advance', true)
+      .select('*')
+      .in('type_id', advTypeIds)
       .eq('state', 'active')
       .not('advance_due', 'is', null)
-      .lte('advance_due', new Date().toISOString());
+      .lte('advance_due', now);
 
     if (!dueRows?.length) return;
 
@@ -115,9 +124,8 @@ async function runAutoAdvanceCheck() {
 
       // Reset Advance itself — keep advance_time, reschedule if it was a weekly timer
       let nextDue = null;
-      if (advRow.advance_time) {
-        // Try to parse "Fri 9pm ET" style label back into a schedule
-        const parts = advRow.advance_time.trim().split(/\s+/);
+      if (advRow.advance_schedule) {
+        const parts = advRow.advance_schedule.trim().split(/\s+/);
         if (parts.length === 3) {
           const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
           const dayIdx = days.indexOf(parts[0]);
