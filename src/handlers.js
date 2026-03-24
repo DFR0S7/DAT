@@ -330,15 +330,20 @@ function buildShortlistComponents(types, rows, state) {
     });
     for (let i = 0; i < itemBtns.length; i += 5) out.push(new ActionRowBuilder().addComponents(itemBtns.slice(i, i + 5)));
 
-    // Timer button — shows active timer label if set
-    const advDueVal  = advItem?.advance_due ?? null;
+    // Advance time note + timer buttons
+    const advTimeVal  = advItem?.advance_time ?? null;
+    const advDueVal   = advItem?.advance_due ?? null;
     const advSchedVal = advItem?.advance_schedule ?? null;
-    const dueMs      = advDueVal ? new Date(advDueVal).getTime() : null;
-    const hoursLeft  = dueMs ? Math.max(0, Math.round((dueMs - Date.now()) / 3600000)) : null;
-    const timerLbl   = hoursLeft !== null ? `⏱️ ${hoursLeft}h left` : (advSchedVal ? `⏱️ ${advSchedVal}` : '⏱️ Set timer');
-    const timerStyle = dueMs && dueMs > Date.now() ? ButtonStyle.Success : (advSchedVal ? ButtonStyle.Primary : ButtonStyle.Secondary);
+    const dueMs       = advDueVal ? new Date(advDueVal).getTime() : null;
+    const hoursLeft   = dueMs ? Math.max(0, Math.round((dueMs - Date.now()) / 3600000)) : null;
+    const timerLbl    = hoursLeft !== null ? `⏱️ ${hoursLeft}h left` : (advSchedVal ? `⏱️ ${advSchedVal}` : '⏱️ Set timer');
+    const timerStyle  = dueMs && dueMs > Date.now() ? ButtonStyle.Success : (advSchedVal ? ButtonStyle.Primary : ButtonStyle.Secondary);
 
     out.push(new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`sl_set_time_${enc}`)
+        .setLabel(advTimeVal ? `🕐 ${advTimeVal}` : '🕐 Advance note')
+        .setStyle(advTimeVal ? ButtonStyle.Primary : ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId(`sl_timer_menu_${enc}`).setLabel(timerLbl).setStyle(timerStyle),
       new ButtonBuilder().setCustomId('sl_back').setLabel('← Back').setStyle(ButtonStyle.Primary),
     ));
@@ -1090,8 +1095,8 @@ export async function handleModal(interaction) {
     if (advRow) await supabase.from('shortlist').update({ advance_time: newTime }).eq('id', advRow.id);
 
     const { rows: fresh } = await getShortlistData(userId, types);
-    activeEdits.set(userId, { type: 'shortlist', step: 'edit_toggles', leagueName });
-    await postShortlist(await interaction.user.createDM(), types, fresh, { step: 'edit_toggles', leagueName }, userId);
+    activeEdits.set(userId, { type: 'shortlist', step: 'main' });
+    await postShortlist(await interaction.user.createDM(), types, fresh, { step: 'main' }, userId);
     return;
   }
 }
