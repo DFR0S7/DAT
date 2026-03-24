@@ -767,8 +767,23 @@ export async function handleButton(interaction) {
     const enc      = rem.slice(0, lastUs1);
     const leagueName = rows.find(r => encodeLeague(r.league_name) === enc)?.league_name ?? enc;
 
-    const row = rows.find(r => r.league_name === leagueName && r.type_id === typeId);
+    const row     = rows.find(r => r.league_name === leagueName && r.type_id === typeId);
+    const isAdvance = types.find(t => t.id === typeId)?.is_advance ?? false;
+
     if (row) await supabase.from('shortlist').update({ state: newState }).eq('id', row.id);
+
+    // If Advance was just marked done, auto-reset the whole cycle
+    if (isAdvance && newState === 'done') {
+      const nonAdvTypeIds = types.filter(t => !t.is_advance).map(t => t.id);
+      if (nonAdvTypeIds.length) {
+        await supabase.from('shortlist')
+          .update({ state: 'active' })
+          .eq('user_id', userId)
+          .eq('league_name', leagueName)
+          .in('type_id', nonAdvTypeIds)
+          .in('state', ['active', 'done']);
+      }
+    }
 
     const { rows: fresh } = await getShortlistData(userId, types);
     activeEdits.set(userId, { type: 'shortlist', step: 'edit_toggles', leagueName });
