@@ -2,7 +2,7 @@
 import http from 'http';
 import axios from 'axios';
 import { Client, GatewayIntentBits, MessageFlags, REST, Routes, SlashCommandBuilder } from 'discord.js';
-import { handleCommand, handleButton, handleSelect, handleModal, handleMessage, parseTimeString, nextOccurrence, normalizeTz } from './handlers.js';
+import { handleCommand, handleButton, handleSelect, handleModal, handleMessage, parseTimeString, nextOccurrence, normalizeTz, postShortlist, getOrSeedShortlistTypes, getShortlistData } from './handlers.js';
 import { supabase } from './db.js';
 
 // ── Discord client ─────────────────────────────────────────────────────────────
@@ -141,13 +141,16 @@ async function runAutoAdvanceCheck() {
         .update({ state: 'active', advance_due: nextDue })
         .eq('id', advRow.id);
 
-      // DM the user
+      // DM the user and update their shortlist
       try {
         const user = await client.users.fetch(userId);
         const dm   = await user.createDM();
-        await dm.send(`⏱️ **Auto-advance fired for ${leagueName}!**
+        await dm.send(`⏱️ **Auto-advance fired for ${leagueName}!**\n\nAll tasks have been reset for the new cycle. Good luck! 🏈`);
 
-All tasks have been reset for the new cycle. Good luck! 🏈`);
+        // Re-post the shortlist so it updates automatically
+        const freshTypes = await getOrSeedShortlistTypes(userId);
+        const { rows: freshRows } = await getShortlistData(userId, freshTypes);
+        await postShortlist(dm, freshTypes, freshRows, { step: 'main' }, userId);
       } catch (err) {
         console.error(`Failed to DM user ${userId} for auto-advance:`, err.message);
       }
