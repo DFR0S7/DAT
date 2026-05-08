@@ -414,16 +414,15 @@ function buildShortlistComponents(types, rows, state) {
 
 // small helpers
 function leaguePicker(customId, leagues, placeholder) {
-  const safeLeagues = leagues.slice(0, 25);
-  
-addOptions(
-  safeLeagues.map(name, i) =>
-    new StringSelectMenuOptionBuilder
+ const safeLeagues = leagues.slice(0, 25);
 
-  return new ActionRowBuilder().addComponents(
-    new StringSelectMenuBuilder().setCustomId(customId).setPlaceholder(placeholder)
-      .addOptions(leagues.map(name => new StringSelectMenuOptionBuilder().setLabel(name).setValue(name)))
-  );
+.addOptions(
+  safeLeagues.map((name, i) =>
+    new StringSelectMenuOptionBuilder()
+      .setLabel(`${i + 1}. ${name}`)
+      .setValue(name)
+  )
+);
 }
 function backRow() {
   return new ActionRowBuilder().addComponents(
