@@ -417,7 +417,7 @@ function leaguePicker(customId, leagues, placeholder) {
   const safeLeagues = leagues.slice(0, 25);
   
 addOptions(
-  safeLeagues.map((name, i) =>
+  safeLeagues.map(name, i) =>
     new StringSelectMenuOptionBuilder
 
   return new ActionRowBuilder().addComponents(
