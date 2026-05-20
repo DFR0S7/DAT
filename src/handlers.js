@@ -246,6 +246,12 @@ function buildShortlistComponents(types, rows, state) {
   const leagues = [...new Set(rows.map(r => r.league_name))];
   const out = [];
 
+  // If leagues is empty and we're in a picker step, fall back to main
+  const pickerSteps = ['edit_pick', 'rename_pick', 'remove_pick', 'reorder_a', 'reorder_b', 'advance_pick'];
+  if (!leagues.length && pickerSteps.includes(state.step)) {
+    state = { step: 'main' };
+  }
+
   if (state.step === 'main') {
     // Row 1: Update + Advance
     out.push(new ActionRowBuilder().addComponents(
@@ -736,26 +742,31 @@ export async function handleButton(interaction) {
 
   // ── Main menu icon buttons ──
   if (id === 'sl_btn_edit') {
+    if (!rows.length) { await reply({ step: 'main' }); return; }
     activeEdits.set(userId, { type: 'shortlist', step: 'edit_pick' });
     await reply({ step: 'edit_pick' });
     return;
   }
   if (id === 'sl_btn_rename') {
+    if (!rows.length) { await reply({ step: 'main' }); return; }
     activeEdits.set(userId, { type: 'shortlist', step: 'rename_pick' });
     await reply({ step: 'rename_pick' });
     return;
   }
   if (id === 'sl_btn_remove') {
+    if (!rows.length) { await reply({ step: 'main' }); return; }
     activeEdits.set(userId, { type: 'shortlist', step: 'remove_pick' });
     await reply({ step: 'remove_pick' });
     return;
   }
   if (id === 'sl_btn_reorder') {
+    if (rows.length < 2) { await reply({ step: 'main' }); return; }
     activeEdits.set(userId, { type: 'shortlist', step: 'reorder_a' });
     await reply({ step: 'reorder_a' });
     return;
   }
   if (id === 'sl_btn_advance') {
+    if (!rows.length) { await reply({ step: 'main' }); return; }
     activeEdits.set(userId, { type: 'shortlist', step: 'advance_pick' });
     await reply({ step: 'advance_pick' });
     return;
