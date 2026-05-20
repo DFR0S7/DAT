@@ -284,6 +284,13 @@ function buildShortlistComponents(types, rows, state) {
     out.push(backRow());
 
   } else if (state.step === 'reorder_a') {
+
+    
+if (!leagues.length) {
+    out.push(backRow());
+    return out;
+  }
+
     out.push(new ActionRowBuilder().addComponents(
       new StringSelectMenuBuilder()
         .setCustomId('sl_reorder_a').setPlaceholder('Move which league?')
