@@ -294,21 +294,32 @@ function buildShortlistComponents(types, rows, state) {
     out.push(backRow());
 
   } else if (state.step === 'reorder_b') {
-    const currentPos = leagues.indexOf(state.leagueNameA) + 1;
-    out.push(new ActionRowBuilder().addComponents(
-      new StringSelectMenuBuilder()
-        .setCustomId(`sl_reorder_b_${encodeLeague(state.leagueNameA)}`)
-        .setPlaceholder(`Move to which position? (currently #${currentPos})`)
-        .addOptions(
-          leagues
-            .map((name, i) => ({ name, pos: i + 1 }))
-            .filter(({ name }) => name !== state.leagueNameA)
-            .map(({ name, pos }) =>
-              new StringSelectMenuOptionBuilder().setLabel(`Position ${pos} — ${name}`).setValue(String(pos))
-            )
-        )
-    ));
+  const currentPos = leagues.indexOf(state.leagueNameA) + 1;
+
+  const options = leagues
+    .map((name, i) => ({ name, pos: i + 1 }))
+    .filter(({ name }) => name !== state.leagueNameA);
+
+  // ✅ ADD THIS GUARD
+  if (!options.length) {
     out.push(backRow());
+    return out;
+  }
+
+  out.push(new ActionRowBuilder().addComponents(
+    new StringSelectMenuBuilder()
+      .setCustomId(`sl_reorder_b_${encodeLeague(state.leagueNameA)}`)
+      .setPlaceholder(`Move to which position? (currently #${currentPos})`)
+      .addOptions(
+        options.map(({ name, pos }) =>
+          new StringSelectMenuOptionBuilder()
+            .setLabel(`Position ${pos} — ${name}`)
+            .setValue(String(pos))
+        )
+      )
+  ));
+
+  out.push(backRow());
 
   } else if (state.step === 'edit_toggles') {
     const leagueItems = rows.filter(r => r.league_name === state.leagueName);
@@ -414,7 +425,18 @@ function buildShortlistComponents(types, rows, state) {
 
 // small helpers
 function leaguePicker(customId, leagues, placeholder) {
+
   const safeLeagues = leagues.slice(0, 25);
+
+  // ✅ ADD THIS BLOCK
+  if (!safeLeagues.length) {
+    return new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('sl_back')
+        .setLabel('← Back')
+        .setStyle(ButtonStyle.Primary)
+    );
+  }
 
   const menu = new StringSelectMenuBuilder()
     .setCustomId(customId)
