@@ -284,13 +284,6 @@ function buildShortlistComponents(types, rows, state) {
     out.push(backRow());
 
   } else if (state.step === 'reorder_a') {
-
-    
-if (!leagues.length) {
-    out.push(backRow());
-    return out;
-  }
-
     out.push(new ActionRowBuilder().addComponents(
       new StringSelectMenuBuilder()
         .setCustomId('sl_reorder_a').setPlaceholder('Move which league?')
@@ -301,32 +294,21 @@ if (!leagues.length) {
     out.push(backRow());
 
   } else if (state.step === 'reorder_b') {
-  const currentPos = leagues.indexOf(state.leagueNameA) + 1;
-
-  const options = leagues
-    .map((name, i) => ({ name, pos: i + 1 }))
-    .filter(({ name }) => name !== state.leagueNameA);
-
-  // ✅ ADD THIS GUARD
-  if (!options.length) {
-    out.push(backRow());
-    return out;
-  }
-
-  out.push(new ActionRowBuilder().addComponents(
-    new StringSelectMenuBuilder()
-      .setCustomId(`sl_reorder_b_${encodeLeague(state.leagueNameA)}`)
-      .setPlaceholder(`Move to which position? (currently #${currentPos})`)
-      .addOptions(
-        options.map(({ name, pos }) =>
-          new StringSelectMenuOptionBuilder()
-            .setLabel(`Position ${pos} — ${name}`)
-            .setValue(String(pos))
+    const currentPos = leagues.indexOf(state.leagueNameA) + 1;
+    out.push(new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder()
+        .setCustomId(`sl_reorder_b_${encodeLeague(state.leagueNameA)}`)
+        .setPlaceholder(`Move to which position? (currently #${currentPos})`)
+        .addOptions(
+          leagues
+            .map((name, i) => ({ name, pos: i + 1 }))
+            .filter(({ name }) => name !== state.leagueNameA)
+            .map(({ name, pos }) =>
+              new StringSelectMenuOptionBuilder().setLabel(`Position ${pos} — ${name}`).setValue(String(pos))
+            )
         )
-      )
-  ));
-
-  out.push(backRow());
+    ));
+    out.push(backRow());
 
   } else if (state.step === 'edit_toggles') {
     const leagueItems = rows.filter(r => r.league_name === state.leagueName);
@@ -427,36 +409,30 @@ if (!leagues.length) {
     ));
   }
 
-  return out;
+  return dedupeComponents(out);
+}
+
+// Deduplicate component rows — Discord rejects duplicate customIds
+function dedupeComponents(rows) {
+  const seen = new Set();
+  return rows.map(row => {
+    const comps = row.components.filter(c => {
+      if (!c.data?.custom_id) return true;
+      if (seen.has(c.data.custom_id)) return false;
+      seen.add(c.data.custom_id);
+      return true;
+    });
+    row.components = comps;
+    return row;
+  }).filter(r => r.components.length > 0);
 }
 
 // small helpers
 function leaguePicker(customId, leagues, placeholder) {
-
-  const safeLeagues = leagues.slice(0, 25);
-
-  // ✅ ADD THIS BLOCK
-  if (!safeLeagues.length) {
-    return new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId('sl_back')
-        .setLabel('← Back')
-        .setStyle(ButtonStyle.Primary)
-    );
-  }
-
-  const menu = new StringSelectMenuBuilder()
-    .setCustomId(customId)
-    .setPlaceholder(placeholder)
-    .addOptions(
-      safeLeagues.map((name, i) =>
-        new StringSelectMenuOptionBuilder()
-          .setLabel(`${i + 1}. ${name}`)
-          .setValue(name)
-      )
-    );
-
-  return new ActionRowBuilder().addComponents(menu);
+  return new ActionRowBuilder().addComponents(
+    new StringSelectMenuBuilder().setCustomId(customId).setPlaceholder(placeholder)
+      .addOptions(leagues.map(name => new StringSelectMenuOptionBuilder().setLabel(name).setValue(name)))
+  );
 }
 function backRow() {
   return new ActionRowBuilder().addComponents(
