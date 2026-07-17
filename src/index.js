@@ -222,6 +222,19 @@ setInterval(runDailyPing, 5 * 60 * 1000);
 // ── Discord events ─────────────────────────────────────────────────────────────
 client.once('clientReady', () => console.log('DAT online:', client.user.tag));
 
+// ── Supabase keep-alive ping ───────────────────────────────────────────
+// Runs once at startup then every 24 hours to prevent Supabase pausing due to inactivity
+const pingSupabase = async () => {
+  try {
+    await supabase.from('todo_config').select('user_id').limit(1);
+    console.log('[supabase] Keep-alive ping successful');
+  } catch (err) {
+    console.error('[supabase] Keep-alive ping failed:', err.message);
+  }
+};
+await pingSupabase();
+setInterval(pingSupabase, 24 * 60 * 60 * 1000);
+
 client.on('interactionCreate', async (interaction) => {
   try {
     if (interaction.isChatInputCommand()) return handleCommand(interaction, client);
