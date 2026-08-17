@@ -102,6 +102,7 @@ new SlashCommandBuilder()
   .addStringOption(o => o.setName('notes').setDescription('Notes').setRequired(false)),
  
 
+
 new SlashCommandBuilder()
   .setName('roster')
   .setDescription('Manage the roster for your active dynasty')
@@ -113,6 +114,7 @@ new SlashCommandBuilder()
       { name: 'Edit player',   value: 'edit'   },
       { name: 'Remove player', value: 'remove' },
       { name: 'Import CSV',    value: 'import' },
+      { name: 'Export CSV',    value: 'export' },
     ))
   .addStringOption(o => o.setName('name').setDescription('Player name').setRequired(false))
   .addStringOption(o => o.setName('pos').setDescription('Position (add: required; edit/remove: disambiguator if name matches multiple)').setRequired(false)
@@ -143,7 +145,7 @@ new SlashCommandBuilder()
       { name: 'TP — portal immediate starter (JR)',     value: 'TP' },
     ))
   .addStringOption(o => o.setName('notes').setDescription('Notes').setRequired(false)),
-
+ 
 
 new SlashCommandBuilder()
   .setName('needs')
