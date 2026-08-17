@@ -4,6 +4,7 @@ import axios from 'axios';
 import { Client, GatewayIntentBits, MessageFlags, REST, Routes, SlashCommandBuilder } from 'discord.js';
 import { handleCommand, handleButton, handleSelect, handleModal, handleMessage, parseTimeString, nextOccurrence, normalizeTz, postShortlist, getOrSeedShortlistTypes, getShortlistData } from './handlers.js';
 import { supabase } from './db.js';
+import { handleSeasonCommand } from './seasonHandlers.js';
 
 // ── Discord client ─────────────────────────────────────────────────────────────
 const client = new Client({
@@ -52,6 +53,51 @@ const commands = [
     .addStringOption(o => o.setName('message').setDescription('Your feedback').setRequired(true)),
 
 ].map(c => c.toJSON());
+
+
+new SlashCommandBuilder()
+  .setName('season')
+  .setDescription('Log and manage season history for your active dynasty')
+  .setDMPermission(true)
+  .addStringOption(o => o.setName('action').setDescription('What to do').setRequired(true)
+    .addChoices(
+      { name: 'Log a season',   value: 'log'    },
+      { name: 'View history',   value: 'list'   },
+      { name: 'Edit a season',  value: 'edit'   },
+      { name: 'Delete a season', value: 'delete' },
+    ))
+  .addIntegerOption(o => o.setName('season_num').setDescription('Season number').setRequired(false))
+  .addIntegerOption(o => o.setName('wins').setDescription('Wins').setRequired(false))
+  .addIntegerOption(o => o.setName('losses').setDescription('Losses').setRequired(false))
+  .addStringOption(o => o.setName('conference').setDescription('Conference (e.g. MAC, SEC East)').setRequired(false))
+  .addIntegerOption(o => o.setName('tier').setDescription('Tier, 1 = top (only if your dynasty uses the promotion ladder)').setRequired(false)
+    .addChoices(
+      { name: 'Tier 1', value: 1 },
+      { name: 'Tier 2', value: 2 },
+      { name: 'Tier 3', value: 3 },
+      { name: 'Tier 4', value: 4 },
+      { name: 'Tier 5', value: 5 },
+    ))
+  .addStringOption(o => o.setName('ccg_result').setDescription('Conference championship result').setRequired(false)
+    .addChoices(
+      { name: "Didn't make CCG",       value: 'didnt-make' },
+      { name: 'Lost CCG',              value: 'lost-ccg'   },
+      { name: 'Won CCG — Promoted',    value: 'won-ccg'    },
+    ))
+  .addStringOption(o => o.setName('bowl_result').setDescription('Bowl game result').setRequired(false)
+    .addChoices(
+      { name: 'Bowl-eligible, not played', value: 'none-eligible' },
+      { name: 'Lost Bowl',                 value: 'lost'           },
+      { name: 'Won Bowl',                  value: 'won'            },
+    ))
+  .addIntegerOption(o => o.setName('prestige').setDescription('End-of-season prestige (stars)').setRequired(false)
+    .addChoices(
+      { name: '1 star', value: 1 }, { name: '2 star', value: 2 }, { name: '3 star', value: 3 },
+      { name: '4 star', value: 4 }, { name: '5 star', value: 5 }, { name: '6 star', value: 6 },
+    ))
+  .addStringOption(o => o.setName('recruiting').setDescription('Recruiting class summary').setRequired(false))
+  .addStringOption(o => o.setName('notes').setDescription('Notes').setRequired(false)),
+ 
 
 // ── Startup: register commands then login ─────────────────────────────────────
 async function start() {
