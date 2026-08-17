@@ -512,6 +512,8 @@ export async function handleOnboardingMessage(message) {
 // COMMAND HANDLER
 // ─────────────────────────────────────────────────────────────────────────────
 
+if (commandName === 'dynasty') return handleDynastyCommand(interaction);
+
 const HELP_TEXT = `📋 **DAT — Dynasty Advance Tracker**
 
 **Item types** (per league)
