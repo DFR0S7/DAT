@@ -513,6 +513,8 @@ export async function handleOnboardingMessage(message) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 if (commandName === 'dynasty') return handleDynastyCommand(interaction);
+if (commandName === 'season') return handleSeasonCommand(interaction);
+if (commandName === 'roster') return handleRosterCommand(interaction);
 
 const HELP_TEXT = `📋 **DAT — Dynasty Advance Tracker**
 
