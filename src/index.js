@@ -236,6 +236,23 @@ await pingSupabase();
 setInterval(pingSupabase, 24 * 60 * 60 * 1000);
 
 client.on('interactionCreate', async (interaction) => {
+
+import { handleDynastyCommand } from './dynastyHandlers.js';
+
+// in commands array, alongside shortlist/shortlist-config/etc:
+new SlashCommandBuilder()
+  .setName('dynasty')
+  .setDescription('Manage and switch between your dynasties')
+  .setDMPermission(true)
+  .addStringOption(o => o.setName('action').setDescription('What to do').setRequired(true)
+    .addChoices(
+      { name: 'List dynasties',        value: 'list'   },
+      { name: 'Switch active dynasty', value: 'switch' },
+      { name: 'Create new dynasty',    value: 'new'    },
+      { name: 'Delete dynasty',        value: 'delete' },
+    ))
+  .addStringOption(o => o.setName('name').setDescription('Dynasty/team name').setRequired(false)),
+  
   try {
     if (interaction.isChatInputCommand()) return handleCommand(interaction, client);
     if (interaction.isButton())           return handleButton(interaction);
