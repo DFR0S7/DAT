@@ -19,6 +19,8 @@ const client = new Client({
 });
 
 // ── Slash command definitions ─────────────────────────────────────────────────
+const POS_CHOICES = ["QB","HB","WR","TE","OT","OG","C","DE","DT","OLB","MLB","CB","S","K/P"].map(p => ({ name: p, value: p }));
+
 const commands = [
   new SlashCommandBuilder()
     .setName('shortlist')
@@ -55,124 +57,132 @@ const commands = [
     .setDMPermission(true)
     .addStringOption(o => o.setName('message').setDescription('Your feedback').setRequired(true)),
 
+  new SlashCommandBuilder()
+    .setName('dynasty')
+    .setDescription('Manage and switch between your dynasties')
+    .setDMPermission(true)
+    .addStringOption(o => o.setName('action').setDescription('What to do').setRequired(true)
+      .addChoices(
+        { name: 'List dynasties',        value: 'list'   },
+        { name: 'Switch active dynasty', value: 'switch' },
+        { name: 'Create new dynasty',    value: 'new'    },
+        { name: 'Delete dynasty',        value: 'delete' },
+      ))
+    .addStringOption(o => o.setName('name').setDescription('Dynasty/team name').setRequired(false)),
+
+  new SlashCommandBuilder()
+    .setName('season')
+    .setDescription('Log and manage season history for your active dynasty')
+    .setDMPermission(true)
+    .addStringOption(o => o.setName('action').setDescription('What to do').setRequired(true)
+      .addChoices(
+        { name: 'Log a season',    value: 'log'    },
+        { name: 'View history',    value: 'list'   },
+        { name: 'Edit a season',   value: 'edit'   },
+        { name: 'Delete a season', value: 'delete' },
+      ))
+    .addIntegerOption(o => o.setName('season_num').setDescription('Season number').setRequired(false))
+    .addIntegerOption(o => o.setName('wins').setDescription('Wins').setRequired(false))
+    .addIntegerOption(o => o.setName('losses').setDescription('Losses').setRequired(false))
+    .addStringOption(o => o.setName('conference').setDescription('Conference (e.g. MAC, SEC East)').setRequired(false))
+    .addIntegerOption(o => o.setName('tier').setDescription('Tier, 1 = top (only if your dynasty uses the promotion ladder)').setRequired(false)
+      .addChoices(
+        { name: 'Tier 1', value: 1 },
+        { name: 'Tier 2', value: 2 },
+        { name: 'Tier 3', value: 3 },
+        { name: 'Tier 4', value: 4 },
+        { name: 'Tier 5', value: 5 },
+      ))
+    .addStringOption(o => o.setName('ccg_result').setDescription('Conference championship result').setRequired(false)
+      .addChoices(
+        { name: "Didn't make CCG",    value: 'didnt-make' },
+        { name: 'Lost CCG',           value: 'lost-ccg'   },
+        { name: 'Won CCG — Promoted', value: 'won-ccg'    },
+      ))
+    .addStringOption(o => o.setName('bowl_result').setDescription('Bowl game result').setRequired(false)
+      .addChoices(
+        { name: 'Bowl-eligible, not played', value: 'none-eligible' },
+        { name: 'Lost Bowl',                 value: 'lost'          },
+        { name: 'Won Bowl',                  value: 'won'           },
+      ))
+    .addIntegerOption(o => o.setName('prestige').setDescription('End-of-season prestige (stars)').setRequired(false)
+      .addChoices(
+        { name: '1 star', value: 1 }, { name: '2 star', value: 2 }, { name: '3 star', value: 3 },
+        { name: '4 star', value: 4 }, { name: '5 star', value: 5 }, { name: '6 star', value: 6 },
+      ))
+    .addStringOption(o => o.setName('recruiting').setDescription('Recruiting class summary').setRequired(false))
+    .addStringOption(o => o.setName('notes').setDescription('Notes').setRequired(false)),
+
+  new SlashCommandBuilder()
+    .setName('roster')
+    .setDescription('Manage the roster for your active dynasty')
+    .setDMPermission(true)
+    .addStringOption(o => o.setName('action').setDescription('What to do').setRequired(true)
+      .addChoices(
+        { name: 'Add player',    value: 'add'    },
+        { name: 'View roster',   value: 'list'   },
+        { name: 'Edit player',   value: 'edit'   },
+        { name: 'Remove player', value: 'remove' },
+        { name: 'Import CSV',    value: 'import' },
+        { name: 'Export CSV',    value: 'export' },
+      ))
+    .addStringOption(o => o.setName('name').setDescription('Player name').setRequired(false))
+    .addStringOption(o => o.setName('pos').setDescription('Position (add: required; edit/remove: disambiguator if name matches multiple)').setRequired(false)
+      .addChoices(...POS_CHOICES))
+    .addStringOption(o => o.setName('new_pos').setDescription("New position (edit only — changes the player's position)").setRequired(false)
+      .addChoices(...POS_CHOICES))
+    .addStringOption(o => o.setName('class_year').setDescription('Class year').setRequired(false)
+      .addChoices(...["FR","RS-FR","SO","RS-SO","JR","RS-JR","SR","RS-SR"].map(y => ({ name: y, value: y }))))
+    .addIntegerOption(o => o.setName('overall').setDescription('Overall rating').setRequired(false).setMinValue(0).setMaxValue(99))
+    .addStringOption(o => o.setName('dev_trait').setDescription('Dev trait').setRequired(false)
+      .addChoices({ name: 'Normal', value: 'Normal' }, { name: 'Impact', value: 'Impact' }, { name: 'Star', value: 'Star' }, { name: 'Elite', value: 'Elite' }))
+    .addStringOption(o => o.setName('flight_risk').setDescription('Transfer portal risk').setRequired(false)
+      .addChoices({ name: 'Low', value: 'Low' }, { name: 'Medium', value: 'Medium' }, { name: 'High', value: 'High' }))
+    .addBooleanOption(o => o.setName('nil_offered').setDescription('NIL offered to retain?').setRequired(false))
+    .addStringOption(o => o.setName('nil_amount').setDescription('NIL amount / notes').setRequired(false))
+    .addStringOption(o => o.setName('status').setDescription('Player status').setRequired(false)
+      .addChoices(
+        { name: 'Target',          value: 'Target'          },
+        { name: 'Signed',          value: 'Signed'          },
+        { name: 'On Roster',       value: 'On Roster'       },
+        { name: 'Retained w/ NIL', value: 'Retained w/ NIL' },
+        { name: 'Transferred Out', value: 'Transferred Out' },
+      ))
+    .addStringOption(o => o.setName('recruit_type').setDescription('Recruit type — which need this fills').setRequired(false)
+      .addChoices(
+        { name: 'HS — high school recruit',           value: 'HS' },
+        { name: 'FP — portal future player (FR/SO)',   value: 'FP' },
+        { name: 'TP — portal immediate starter (JR)',  value: 'TP' },
+      ))
+    .addStringOption(o => o.setName('notes').setDescription('Notes').setRequired(false)),
+
+  new SlashCommandBuilder()
+    .setName('needs')
+    .setDescription('View and set positional needs for your active dynasty')
+    .setDMPermission(true)
+    .addStringOption(o => o.setName('action').setDescription('What to do').setRequired(true)
+      .addChoices(
+        { name: 'View needs',     value: 'view'         },
+        { name: 'Set a position', value: 'set'          },
+        { name: 'Mark updated',   value: 'mark-updated' },
+      ))
+    .addStringOption(o => o.setName('pos').setDescription('Position (for action:set)').setRequired(false)
+      .addChoices(...POS_CHOICES))
+    .addIntegerOption(o => o.setName('hs_need').setDescription('HS recruits needed').setRequired(false).setMinValue(0))
+    .addIntegerOption(o => o.setName('portal_need').setDescription('Portal recruits needed').setRequired(false).setMinValue(0))
+    .addStringOption(o => o.setName('portal_type').setDescription('Portal need type').setRequired(false)
+      .addChoices(
+        { name: 'FP — future player (FR/SO)',   value: 'FP' },
+        { name: 'TP — immediate starter (JR)',  value: 'TP' },
+      ))
+    .addStringOption(o => o.setName('period').setDescription('Recruiting window (for action:mark-updated)').setRequired(false)
+      .addChoices(
+        { name: 'High school recruiting', value: 'HS' },
+        { name: 'Transfer portal',        value: 'TP' },
+      )),
+
 ].map(c => c.toJSON());
 
-
-new SlashCommandBuilder()
-  .setName('season')
-  .setDescription('Log and manage season history for your active dynasty')
-  .setDMPermission(true)
-  .addStringOption(o => o.setName('action').setDescription('What to do').setRequired(true)
-    .addChoices(
-      { name: 'Log a season',   value: 'log'    },
-      { name: 'View history',   value: 'list'   },
-      { name: 'Edit a season',  value: 'edit'   },
-      { name: 'Delete a season', value: 'delete' },
-    ))
-  .addIntegerOption(o => o.setName('season_num').setDescription('Season number').setRequired(false))
-  .addIntegerOption(o => o.setName('wins').setDescription('Wins').setRequired(false))
-  .addIntegerOption(o => o.setName('losses').setDescription('Losses').setRequired(false))
-  .addStringOption(o => o.setName('conference').setDescription('Conference (e.g. MAC, SEC East)').setRequired(false))
-  .addIntegerOption(o => o.setName('tier').setDescription('Tier, 1 = top (only if your dynasty uses the promotion ladder)').setRequired(false)
-    .addChoices(
-      { name: 'Tier 1', value: 1 },
-      { name: 'Tier 2', value: 2 },
-      { name: 'Tier 3', value: 3 },
-      { name: 'Tier 4', value: 4 },
-      { name: 'Tier 5', value: 5 },
-    ))
-  .addStringOption(o => o.setName('ccg_result').setDescription('Conference championship result').setRequired(false)
-    .addChoices(
-      { name: "Didn't make CCG",       value: 'didnt-make' },
-      { name: 'Lost CCG',              value: 'lost-ccg'   },
-      { name: 'Won CCG — Promoted',    value: 'won-ccg'    },
-    ))
-  .addStringOption(o => o.setName('bowl_result').setDescription('Bowl game result').setRequired(false)
-    .addChoices(
-      { name: 'Bowl-eligible, not played', value: 'none-eligible' },
-      { name: 'Lost Bowl',                 value: 'lost'           },
-      { name: 'Won Bowl',                  value: 'won'            },
-    ))
-  .addIntegerOption(o => o.setName('prestige').setDescription('End-of-season prestige (stars)').setRequired(false)
-    .addChoices(
-      { name: '1 star', value: 1 }, { name: '2 star', value: 2 }, { name: '3 star', value: 3 },
-      { name: '4 star', value: 4 }, { name: '5 star', value: 5 }, { name: '6 star', value: 6 },
-    ))
-  .addStringOption(o => o.setName('recruiting').setDescription('Recruiting class summary').setRequired(false))
-  .addStringOption(o => o.setName('notes').setDescription('Notes').setRequired(false)),
- 
-
-
-new SlashCommandBuilder()
-  .setName('roster')
-  .setDescription('Manage the roster for your active dynasty')
-  .setDMPermission(true)
-  .addStringOption(o => o.setName('action').setDescription('What to do').setRequired(true)
-    .addChoices(
-      { name: 'Add player',    value: 'add'    },
-      { name: 'View roster',   value: 'list'   },
-      { name: 'Edit player',   value: 'edit'   },
-      { name: 'Remove player', value: 'remove' },
-      { name: 'Import CSV',    value: 'import' },
-      { name: 'Export CSV',    value: 'export' },
-    ))
-  .addStringOption(o => o.setName('name').setDescription('Player name').setRequired(false))
-  .addStringOption(o => o.setName('pos').setDescription('Position (add: required; edit/remove: disambiguator if name matches multiple)').setRequired(false)
-    .addChoices(...["QB","HB","WR","TE","OT","OG","C","DE","DT","OLB","MLB","CB","S","K/P"].map(p => ({ name: p, value: p }))))
-  .addStringOption(o => o.setName('new_pos').setDescription('New position (edit only — changes the player\'s position)').setRequired(false)
-    .addChoices(...["QB","HB","WR","TE","OT","OG","C","DE","DT","OLB","MLB","CB","S","K/P"].map(p => ({ name: p, value: p }))))
-  .addStringOption(o => o.setName('class_year').setDescription('Class year').setRequired(false)
-    .addChoices(...["FR","RS-FR","SO","RS-SO","JR","RS-JR","SR","RS-SR"].map(y => ({ name: y, value: y }))))
-  .addIntegerOption(o => o.setName('overall').setDescription('Overall rating').setRequired(false).setMinValue(0).setMaxValue(99))
-  .addStringOption(o => o.setName('dev_trait').setDescription('Dev trait').setRequired(false)
-    .addChoices({ name: 'Normal', value: 'Normal' }, { name: 'Impact', value: 'Impact' }, { name: 'Star', value: 'Star' }, { name: 'Elite', value: 'Elite' }))
-  .addStringOption(o => o.setName('flight_risk').setDescription('Transfer portal risk').setRequired(false)
-    .addChoices({ name: 'Low', value: 'Low' }, { name: 'Medium', value: 'Medium' }, { name: 'High', value: 'High' }))
-  .addBooleanOption(o => o.setName('nil_offered').setDescription('NIL offered to retain?').setRequired(false))
-  .addStringOption(o => o.setName('nil_amount').setDescription('NIL amount / notes').setRequired(false))
-  .addStringOption(o => o.setName('status').setDescription('Player status').setRequired(false)
-    .addChoices(
-      { name: 'Target',           value: 'Target'           },
-      { name: 'Signed',           value: 'Signed'           },
-      { name: 'On Roster',        value: 'On Roster'        },
-      { name: 'Retained w/ NIL',  value: 'Retained w/ NIL'  },
-      { name: 'Transferred Out',  value: 'Transferred Out'  },
-    ))
-  .addStringOption(o => o.setName('recruit_type').setDescription('Recruit type — which need this fills').setRequired(false)
-    .addChoices(
-      { name: 'HS — high school recruit',              value: 'HS' },
-      { name: 'FP — portal future player (FR/SO)',      value: 'FP' },
-      { name: 'TP — portal immediate starter (JR)',     value: 'TP' },
-    ))
-  .addStringOption(o => o.setName('notes').setDescription('Notes').setRequired(false)),
- 
-
-new SlashCommandBuilder()
-  .setName('needs')
-  .setDescription('View and set positional needs for your active dynasty')
-  .setDMPermission(true)
-  .addStringOption(o => o.setName('action').setDescription('What to do').setRequired(true)
-    .addChoices(
-      { name: 'View needs',      value: 'view'         },
-      { name: 'Set a position',  value: 'set'           },
-      { name: 'Mark updated',    value: 'mark-updated'  },
-    ))
-  .addStringOption(o => o.setName('pos').setDescription('Position (for action:set)').setRequired(false)
-    .addChoices(...["QB","HB","WR","TE","OT","OG","C","DE","DT","OLB","MLB","CB","S","K/P"].map(p => ({ name: p, value: p }))))
-  .addIntegerOption(o => o.setName('hs_need').setDescription('HS recruits needed').setRequired(false).setMinValue(0))
-  .addIntegerOption(o => o.setName('portal_need').setDescription('Portal recruits needed').setRequired(false).setMinValue(0))
-  .addStringOption(o => o.setName('portal_type').setDescription('Portal need type').setRequired(false)
-    .addChoices(
-      { name: 'FP — future player (FR/SO)',       value: 'FP' },
-      { name: 'TP — immediate starter (JR)',       value: 'TP' },
-    ))
-  .addStringOption(o => o.setName('period').setDescription('Recruiting window (for action:mark-updated)').setRequired(false)
-    .addChoices(
-      { name: 'High school recruiting', value: 'HS' },
-      { name: 'Transfer portal',        value: 'TP' },
-    )),
- 
-  
 // ── Startup: register commands then login ─────────────────────────────────────
 async function start() {
   try {
@@ -356,30 +366,21 @@ await pingSupabase();
 setInterval(pingSupabase, 24 * 60 * 60 * 1000);
 
 client.on('interactionCreate', async (interaction) => {
-
-// in commands array, alongside shortlist/shortlist-config/etc:
-new SlashCommandBuilder()
-  .setName('dynasty')
-  .setDescription('Manage and switch between your dynasties')
-  .setDMPermission(true)
-  .addStringOption(o => o.setName('action').setDescription('What to do').setRequired(true)
-    .addChoices(
-      { name: 'List dynasties',        value: 'list'   },
-      { name: 'Switch active dynasty', value: 'switch' },
-      { name: 'Create new dynasty',    value: 'new'    },
-      { name: 'Delete dynasty',        value: 'delete' },
-    ))
-  .addStringOption(o => o.setName('name').setDescription('Dynasty/team name').setRequired(false)),
-  
   try {
-    if (interaction.isChatInputCommand()) return handleCommand(interaction, client);
+    if (interaction.isChatInputCommand()) {
+      const { commandName } = interaction;
+      if (commandName === 'dynasty') return handleDynastyCommand(interaction);
+      if (commandName === 'season')  return handleSeasonCommand(interaction);
+      if (commandName === 'roster')  return handleRosterCommand(interaction);
+      if (commandName === 'needs')   return handleNeedsCommand(interaction);
+      return handleCommand(interaction, client);
+    }
     if (interaction.isButton())           return handleButton(interaction);
     if (interaction.isStringSelectMenu()) return handleSelect(interaction);
     if (interaction.isModalSubmit()) {
-    if (interaction.customId === 'roster_import_modal') return handleRosterModal(interaction);
-  return handleModal(interaction);
-}
- 
+      if (interaction.customId === 'roster_import_modal') return handleRosterModal(interaction);
+      return handleModal(interaction);
+    }
   } catch (err) {
     console.error('Interaction error:', err);
     const msg = { content: 'Something went wrong. Please try again.', flags: MessageFlags.Ephemeral };
