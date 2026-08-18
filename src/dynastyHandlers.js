@@ -22,7 +22,7 @@ export async function getActiveDynasty(userId) {
   return data?.active_dynasty ?? null;
 }
 
-async function setActiveDynasty(userId, dynastyName) {
+export async function setActiveDynasty(userId, dynastyName) {
   await supabase.from('dynasty_config')
     .upsert({ user_id: userId, active_dynasty: dynastyName }, { onConflict: 'user_id' });
 }
