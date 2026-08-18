@@ -512,7 +512,6 @@ export async function handleOnboardingMessage(message) {
 // COMMAND HANDLER
 // ─────────────────────────────────────────────────────────────────────────────
 
-if (commandName === 'dynasty') return handleDynastyCommand(interaction);
 if (commandName === 'season') return handleSeasonCommand(interaction);
 if (commandName === 'roster') return handleRosterCommand(interaction);
 if (commandName === 'needs') return handleNeedsCommand(interaction);
