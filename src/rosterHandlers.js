@@ -96,6 +96,19 @@ function formatPlayerLine(p) {
   return line;
 }
 
+const RISK_FLAG = { Low: '🟢', Medium: '🟡', High: '🔴' };
+
+// Full-detail card — used by the dashboard's Roster tab, one player at a time
+// rather than the compact one-liner /roster list uses.
+export function formatPlayerCard(p) {
+  const lines = [`**${p.name}** — ${p.pos} · ${p.class_year} · OVR ${p.overall} · ${p.dev_trait} dev`];
+  lines.push(`Status: **${p.status}**${(p.status === 'Target' || p.status === 'Signed') ? ` (${p.recruit_type})` : ''}`);
+  lines.push(`${RISK_FLAG[p.flight_risk] ?? '⚪'} Portal risk: ${p.flight_risk}`);
+  if (p.nil_offered) lines.push(`💰 NIL offered${p.nil_amount ? `: ${p.nil_amount}` : ''}`);
+  if (p.notes) lines.push(`-# ${p.notes}`);
+  return lines.join('\n');
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // COMMAND HANDLER
 // ─────────────────────────────────────────────────────────────────────────────

@@ -9,7 +9,7 @@ import { supabase } from './db.js';
 import { requireActiveDynasty } from './dynastyHandlers.js';
 import { NEED_POSITIONS } from './rosterHandlers.js';
 
-async function computeNeeds(userId, dynastyName) {
+export async function computeNeeds(userId, dynastyName) {
   const { data: needRows } = await supabase
     .from('dynasty_needs').select('*').eq('user_id', userId).eq('dynasty_name', dynastyName);
   const { data: roster } = await supabase
@@ -42,7 +42,7 @@ async function computeNeeds(userId, dynastyName) {
   });
 }
 
-function formatNeedLine(n) {
+export function formatNeedLine(n) {
   const parts = [];
   if (n.hsNeed > 0 || n.hsTargeting > 0) {
     parts.push(`HS ${n.hsLeft}/${n.hsNeed} left${n.hsTargeting ? ` (${n.hsTargeting} targeting)` : ''}`);

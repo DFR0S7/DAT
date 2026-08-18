@@ -8,6 +8,7 @@ import { handleSeasonCommand } from './seasonHandlers.js';
 import { handleRosterCommand, handleRosterModal } from './rosterHandlers.js';
 import { handleDynastyCommand } from './dynastyHandlers.js';
 import { handleNeedsCommand } from './needsHandlers.js';
+import { handleDashboardCommand, handleDashboardButton, handleDashboardSelect } from './dashboardHandlers.js';
 
 // ── Discord client ─────────────────────────────────────────────────────────────
 const client = new Client({
@@ -182,6 +183,13 @@ const commands = [
       )),
 
 ].map(c => c.toJSON());
+
+const dashboardCommand = new SlashCommandBuilder()
+  .setName('dashboard')
+  .setDescription('Open your dynasty dashboard — browse seasons, roster, and needs')
+  .setDMPermission(true)
+  .toJSON();
+commands.push(dashboardCommand);
 
 // ── Startup: register commands then login ─────────────────────────────────────
 async function start() {
@@ -369,14 +377,23 @@ client.on('interactionCreate', async (interaction) => {
   try {
     if (interaction.isChatInputCommand()) {
       const { commandName } = interaction;
-      if (commandName === 'dynasty') return handleDynastyCommand(interaction);
-      if (commandName === 'season')  return handleSeasonCommand(interaction);
-      if (commandName === 'roster')  return handleRosterCommand(interaction);
-      if (commandName === 'needs')   return handleNeedsCommand(interaction);
+      if (commandName === 'dynasty')   return handleDynastyCommand(interaction);
+      if (commandName === 'season')    return handleSeasonCommand(interaction);
+      if (commandName === 'roster')    return handleRosterCommand(interaction);
+      if (commandName === 'needs')     return handleNeedsCommand(interaction);
+      if (commandName === 'dashboard') return handleDashboardCommand(interaction);
       return handleCommand(interaction, client);
     }
-    if (interaction.isButton())           return handleButton(interaction);
-    if (interaction.isStringSelectMenu()) return handleSelect(interaction);
+    if (interaction.isButton()) {
+      const handled = await handleDashboardButton(interaction);
+      if (handled) return;
+      return handleButton(interaction);
+    }
+    if (interaction.isStringSelectMenu()) {
+      const handled = await handleDashboardSelect(interaction);
+      if (handled) return;
+      return handleSelect(interaction);
+    }
     if (interaction.isModalSubmit()) {
       if (interaction.customId === 'roster_import_modal') return handleRosterModal(interaction);
       return handleModal(interaction);

@@ -19,7 +19,7 @@ const BOWL_LABEL = {
 };
 const STARS = n => '★'.repeat(n) + '☆'.repeat(Math.max(0, 6 - n));
 
-function formatSeasonLine(s) {
+export function formatSeasonLine(s) {
   const bits = [`${s.wins}-${s.losses}`];
   if (s.conference) bits.push(s.conference);
   if (s.tier_num) bits.push(`Tier ${s.tier_num}`);
