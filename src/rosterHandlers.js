@@ -87,6 +87,18 @@ async function findPlayers(userId, dynastyName, name, pos) {
   return data ?? [];
 }
 
+// Autocomplete suggestions submit the player's row id as the option value.
+// If the person types free text instead of picking a suggestion (or the
+// suggestion list was stale), fall back to the old name/pos matching.
+async function findPlayerByIdOrName(userId, dynastyName, nameOrId, pos) {
+  if (/^\d+$/.test(nameOrId ?? '')) {
+    const { data } = await supabase.from('dynasty_roster').select('*')
+      .eq('id', nameOrId).eq('user_id', userId).eq('dynasty_name', dynastyName).maybeSingle();
+    if (data) return [data];
+  }
+  return findPlayers(userId, dynastyName, nameOrId, pos);
+}
+
 function formatPlayerLine(p) {
   const statusTag = p.status;
   const recruitTag = (p.status === 'Target' || p.status === 'Signed') ? ` · ${p.recruit_type}` : '';
@@ -112,6 +124,42 @@ export function formatPlayerCard(p) {
 // ─────────────────────────────────────────────────────────────────────────────
 // COMMAND HANDLER
 // ─────────────────────────────────────────────────────────────────────────────
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AUTOCOMPLETE — populates the `name` field with real players as you type,
+// filtered by `pos` if you've already picked one. Only offers suggestions for
+// actions that reference an EXISTING player (edit/remove/commit) — `add` is a
+// new name, so it gets no suggestions and stays a free-text field.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function handleRosterAutocomplete(interaction) {
+  const focused = interaction.options.getFocused(true);
+  if (focused.name !== 'name') return interaction.respond([]);
+
+  const action = interaction.options.getString('action');
+  if (!['edit', 'remove', 'commit'].includes(action)) return interaction.respond([]);
+
+  const userId = interaction.user.id;
+  const dynastyName = await getActiveDynasty(userId);
+  if (!dynastyName) return interaction.respond([]);
+
+  const pos = interaction.options.getString('pos');
+  const typed = (focused.value ?? '').trim();
+
+  let q = supabase.from('dynasty_roster').select('id, name, pos, status')
+    .eq('user_id', userId).eq('dynasty_name', dynastyName)
+    .neq('status', 'Transferred Out')
+    .order('pos').order('name').limit(25);
+  if (pos) q = q.eq('pos', pos);
+  if (typed) q = q.ilike('name', `%${typed}%`);
+
+  const { data: players } = await q;
+  const choices = (players ?? []).map(p => ({
+    name: `${p.name} — ${p.pos}${p.status !== 'On Roster' ? ` (${p.status})` : ''}`.slice(0, 100),
+    value: String(p.id),
+  }));
+  return interaction.respond(choices);
+}
 
 export async function handleRosterCommand(interaction) {
   const userId = interaction.user.id;
@@ -227,7 +275,7 @@ export async function handleRosterCommand(interaction) {
     const pos  = interaction.options.getString('pos');
     if (!name) return interaction.editReply({ content: 'Please provide the **name** of the player to edit.' });
 
-    const matches = await findPlayers(userId, dynastyName, name, pos);
+    const matches = await findPlayerByIdOrName(userId, dynastyName, name, pos);
     if (!matches.length) return interaction.editReply({ content: `No player matching **${name}**${pos ? ` at ${pos}` : ''} found.` });
     if (matches.length > 1) {
       return interaction.editReply({ content: `Multiple players match **${name}**: ${matches.map(m => m.pos).join(', ')}. Re-run with **pos** to disambiguate.` });
@@ -253,12 +301,32 @@ export async function handleRosterCommand(interaction) {
     return interaction.editReply({ content: `✅ Updated **${matches[0].name}**.` });
   }
 
+  if (action === 'commit') {
+    const name = interaction.options.getString('name');
+    const pos  = interaction.options.getString('pos');
+    if (!name) return interaction.editReply({ content: 'Please provide the **name** of the recruit to commit.' });
+
+    const matches = await findPlayerByIdOrName(userId, dynastyName, name, pos);
+    if (!matches.length) return interaction.editReply({ content: `No player matching **${name}**${pos ? ` at ${pos}` : ''} found.` });
+    if (matches.length > 1) {
+      return interaction.editReply({ content: `Multiple players match **${name}**: ${matches.map(m => m.pos).join(', ')}. Re-run with **pos** to disambiguate.` });
+    }
+
+    const player = matches[0];
+    if (player.status !== 'Target' && player.status !== 'Signed') {
+      return interaction.editReply({ content: `**${player.name}** is already **${player.status}** — nothing to commit.` });
+    }
+
+    await supabase.from('dynasty_roster').update({ status: 'On Roster' }).eq('id', player.id);
+    return interaction.editReply({ content: `✅ **${player.name}** moved from recruiting to the active roster.` });
+  }
+
   if (action === 'remove') {
     const name = interaction.options.getString('name');
     const pos  = interaction.options.getString('pos');
     if (!name) return interaction.editReply({ content: 'Please provide the **name** of the player to remove.' });
 
-    const matches = await findPlayers(userId, dynastyName, name, pos);
+    const matches = await findPlayerByIdOrName(userId, dynastyName, name, pos);
     if (!matches.length) return interaction.editReply({ content: `No player matching **${name}**${pos ? ` at ${pos}` : ''} found.` });
     if (matches.length > 1) {
       return interaction.editReply({ content: `Multiple players match **${name}**: ${matches.map(m => m.pos).join(', ')}. Re-run with **pos** to disambiguate.` });

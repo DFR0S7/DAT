@@ -5,7 +5,7 @@ import { Client, GatewayIntentBits, MessageFlags, REST, Routes, SlashCommandBuil
 import { handleCommand, handleButton, handleSelect, handleModal, handleMessage, parseTimeString, nextOccurrence, normalizeTz, postShortlist, getOrSeedShortlistTypes, getShortlistData } from './handlers.js';
 import { supabase } from './db.js';
 import { handleSeasonCommand } from './seasonHandlers.js';
-import { handleRosterCommand, handleRosterModal } from './rosterHandlers.js';
+import { handleRosterCommand, handleRosterModal, handleRosterAutocomplete } from './rosterHandlers.js';
 import { handleDynastyCommand } from './dynastyHandlers.js';
 import { handleNeedsCommand } from './needsHandlers.js';
 import { handleDashboardCommand, handleDashboardButton, handleDashboardSelect } from './dashboardHandlers.js';
@@ -120,16 +120,17 @@ const commands = [
     .setDMPermission(true)
     .addStringOption(o => o.setName('action').setDescription('What to do').setRequired(true)
       .addChoices(
-        { name: 'Add player',    value: 'add'    },
-        { name: 'View roster',   value: 'list'   },
-        { name: 'Edit player',   value: 'edit'   },
-        { name: 'Remove player', value: 'remove' },
-        { name: 'Import CSV',    value: 'import' },
-        { name: 'Export CSV',    value: 'export' },
+        { name: 'Add player',       value: 'add'    },
+        { name: 'View roster',      value: 'list'   },
+        { name: 'Commit to roster', value: 'commit' },
+        { name: 'Edit player',      value: 'edit'   },
+        { name: 'Remove player',    value: 'remove' },
+        { name: 'Import CSV',       value: 'import' },
+        { name: 'Export CSV',       value: 'export' },
       ))
-    .addStringOption(o => o.setName('name').setDescription('Player name').setRequired(false))
-    .addStringOption(o => o.setName('pos').setDescription('Position (add: required; edit/remove: disambiguator if name matches multiple)').setRequired(false)
+    .addStringOption(o => o.setName('pos').setDescription('Position — pick this first to filter the name suggestions').setRequired(false)
       .addChoices(...POS_CHOICES))
+    .addStringOption(o => o.setName('name').setDescription('Player name (type to search existing players, or a new name for Add)').setRequired(false).setAutocomplete(true))
     .addStringOption(o => o.setName('new_pos').setDescription("New position (edit only — changes the player's position)").setRequired(false)
       .addChoices(...POS_CHOICES))
     .addStringOption(o => o.setName('class_year').setDescription('Class year').setRequired(false)
@@ -375,6 +376,10 @@ setInterval(pingSupabase, 24 * 60 * 60 * 1000);
 
 client.on('interactionCreate', async (interaction) => {
   try {
+    if (interaction.isAutocomplete()) {
+      if (interaction.commandName === 'roster') return handleRosterAutocomplete(interaction);
+      return interaction.respond([]);
+    }
     if (interaction.isChatInputCommand()) {
       const { commandName } = interaction;
       if (commandName === 'dynasty')   return handleDynastyCommand(interaction);

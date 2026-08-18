@@ -19,7 +19,7 @@ import { computeNeeds, formatNeedLine } from './needsHandlers.js';
 const dashState = new Map();
 
 function getState(userId) {
-  if (!dashState.has(userId)) dashState.set(userId, { tab: 'seasons', seasonPage: 0, rosterPage: 0 });
+  if (!dashState.has(userId)) dashState.set(userId, { tab: 'seasons', seasonPage: 0, rosterPage: 0, recruitingPage: 0 });
   return dashState.get(userId);
 }
 
@@ -54,7 +54,7 @@ async function buildRosterContent(userId, dynastyName, state) {
   const { data: players } = await supabase
     .from('dynasty_roster').select('*')
     .eq('user_id', userId).eq('dynasty_name', dynastyName)
-    .neq('status', 'Transferred Out')
+    .not('status', 'in', '("Transferred Out","Target","Signed")')
     .order('pos').order('name');
 
   if (!players?.length) {
@@ -67,7 +67,27 @@ async function buildRosterContent(userId, dynastyName, state) {
 
   const slice = players.slice(page * PLAYERS_PER_PAGE, (page + 1) * PLAYERS_PER_PAGE);
   const text = slice.map(formatPlayerCard).join('\n\n');
-  return { text, maxPage, page, total: players.length };
+  return { text, maxPage, page, total: players.length, slice };
+}
+
+async function buildRecruitingContent(userId, dynastyName, state) {
+  const { data: players } = await supabase
+    .from('dynasty_roster').select('*')
+    .eq('user_id', userId).eq('dynasty_name', dynastyName)
+    .in('status', ['Target', 'Signed'])
+    .order('pos').order('name');
+
+  if (!players?.length) {
+    return { text: 'No recruiting targets tracked yet. Use `/roster action:Add` with status Target or Signed.', maxPage: 0, slice: [] };
+  }
+
+  const maxPage = Math.max(0, Math.ceil(players.length / PLAYERS_PER_PAGE) - 1);
+  const page = Math.min(state.recruitingPage, maxPage);
+  state.recruitingPage = page;
+
+  const slice = players.slice(page * PLAYERS_PER_PAGE, (page + 1) * PLAYERS_PER_PAGE);
+  const text = slice.map(formatPlayerCard).join('\n\n');
+  return { text, maxPage, page, total: players.length, slice };
 }
 
 async function buildNeedsContent(userId, dynastyName) {
@@ -112,7 +132,7 @@ async function buildDashboardPayload(userId) {
   const tierLine = (dynRow?.show_tier_ladder && latestSeason?.tier_num) ? `Tier ${latestSeason.tier_num}` : null;
   const subtitle = [prestigeLine, tierLine].filter(Boolean).join(' · ');
 
-  let body, footer = '';
+  let body, footer = '', pageSlice = [];
   if (state.tab === 'seasons') {
     const r = await buildSeasonsContent(userId, dynastyName, state);
     body = `🏆 **Season Ledger**\n\n${r.text}`;
@@ -121,6 +141,11 @@ async function buildDashboardPayload(userId) {
     const r = await buildRosterContent(userId, dynastyName, state);
     body = `👥 **Roster**\n\n${r.text}`;
     if (r.total) footer = `\n\n-# Page ${r.page + 1} of ${r.maxPage + 1} · ${r.total} player${r.total === 1 ? '' : 's'}`;
+  } else if (state.tab === 'recruiting') {
+    const r = await buildRecruitingContent(userId, dynastyName, state);
+    body = `🎯 **Recruiting Targets**\n\n${r.text}`;
+    if (r.total) footer = `\n\n-# Page ${r.page + 1} of ${r.maxPage + 1} · ${r.total} target${r.total === 1 ? '' : 's'} · pick one below to commit to the roster`;
+    pageSlice = r.slice ?? [];
   } else if (state.tab === 'needs') {
     const r = await buildNeedsContent(userId, dynastyName);
     body = `📋 **Roster Needs**\n\n${r.text}`;
@@ -134,19 +159,28 @@ async function buildDashboardPayload(userId) {
   const header = `**${dynastyName}**${subtitle ? `\n-# ${subtitle}` : ''}`;
   const content = `${header}\n\n${body}${footer}`;
 
-  return { content, components: await buildComponents(userId, state) };
+  return { content, components: await buildComponents(userId, state, pageSlice) };
 }
 
-async function buildComponents(userId, state) {
+async function buildComponents(userId, state, pageSlice = []) {
   const rows = [];
 
   // Pagination row (only where relevant)
-  if (state.tab === 'seasons' || state.tab === 'roster') {
-    const pageKey = state.tab === 'seasons' ? 'seasonPage' : 'rosterPage';
+  if (state.tab === 'seasons' || state.tab === 'roster' || state.tab === 'recruiting') {
+    const pageKey = state.tab === 'seasons' ? 'seasonPage' : state.tab === 'roster' ? 'rosterPage' : 'recruitingPage';
     rows.push(new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId(`dash_page_${state.tab}_prev`).setLabel('◀ Prev').setStyle(ButtonStyle.Secondary)
         .setDisabled(state[pageKey] === 0),
       new ButtonBuilder().setCustomId(`dash_page_${state.tab}_next`).setLabel('Next ▶').setStyle(ButtonStyle.Secondary),
+    ));
+  }
+
+  // Commit-to-roster select menu — only on the Recruiting tab, only if this page has targets
+  if (state.tab === 'recruiting' && pageSlice.length) {
+    rows.push(new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder().setCustomId('dash_commit_select').setPlaceholder('Commit a recruit to the roster…')
+        .addOptions(pageSlice.map(p => new StringSelectMenuOptionBuilder()
+          .setLabel(`${p.name} — ${p.pos}`).setDescription(`${p.status} · ${p.recruit_type}`).setValue(String(p.id))))
     ));
   }
 
@@ -167,6 +201,7 @@ async function buildComponents(userId, state) {
   rows.push(new ActionRowBuilder().addComponents(
     mk('dash_tab_seasons', '🏆 Seasons', 'seasons'),
     mk('dash_tab_roster', '👥 Roster', 'roster'),
+    mk('dash_tab_recruiting', '🎯 Recruiting', 'recruiting'),
     mk('dash_tab_needs', '📋 Needs', 'needs'),
     mk('dash_tab_switch', '🔁 Switch', 'switch'),
   ));
@@ -213,12 +248,15 @@ export async function handleDashboardButton(interaction) {
 
   if (interaction.customId === 'dash_tab_seasons') state.tab = 'seasons';
   else if (interaction.customId === 'dash_tab_roster') state.tab = 'roster';
+  else if (interaction.customId === 'dash_tab_recruiting') state.tab = 'recruiting';
   else if (interaction.customId === 'dash_tab_needs') state.tab = 'needs';
   else if (interaction.customId === 'dash_tab_switch') state.tab = 'switch';
   else if (interaction.customId === 'dash_page_seasons_prev') state.seasonPage = Math.max(0, state.seasonPage - 1);
   else if (interaction.customId === 'dash_page_seasons_next') state.seasonPage += 1;
   else if (interaction.customId === 'dash_page_roster_prev') state.rosterPage = Math.max(0, state.rosterPage - 1);
   else if (interaction.customId === 'dash_page_roster_next') state.rosterPage += 1;
+  else if (interaction.customId === 'dash_page_recruiting_prev') state.recruitingPage = Math.max(0, state.recruitingPage - 1);
+  else if (interaction.customId === 'dash_page_recruiting_next') state.recruitingPage += 1;
 
   const payload = await buildDashboardPayload(userId);
   await interaction.editReply(payload);
@@ -226,8 +264,29 @@ export async function handleDashboardButton(interaction) {
 }
 
 export async function handleDashboardSelect(interaction) {
-  if (interaction.customId !== 'dash_switch_select') return false;
   const userId = interaction.user.id;
+
+  if (interaction.customId === 'dash_commit_select') {
+    await interaction.deferUpdate();
+    const rowId = interaction.values[0];
+    await supabase.from('dynasty_roster').update({ status: 'On Roster' }).eq('id', rowId);
+
+    const state = getState(userId);
+    // Stay on Recruiting tab; if this was the last one on the page, back up a page
+    const dynastyName = await getActiveDynasty(userId);
+    const { data: remaining } = await supabase
+      .from('dynasty_roster').select('id', { count: 'exact', head: true })
+      .eq('user_id', userId).eq('dynasty_name', dynastyName).in('status', ['Target', 'Signed']);
+    if (remaining !== null && state.recruitingPage > 0 && state.recruitingPage * PLAYERS_PER_PAGE >= (remaining ?? 0)) {
+      state.recruitingPage -= 1;
+    }
+
+    const payload = await buildDashboardPayload(userId);
+    await interaction.editReply(payload);
+    return true;
+  }
+
+  if (interaction.customId !== 'dash_switch_select') return false;
   await interaction.deferUpdate();
 
   const chosen = interaction.values[0];
@@ -237,6 +296,7 @@ export async function handleDashboardSelect(interaction) {
   state.tab = 'seasons'; // land on Seasons for the newly-active dynasty
   state.seasonPage = 0;
   state.rosterPage = 0;
+  state.recruitingPage = 0;
 
   const payload = await buildDashboardPayload(userId);
   await interaction.editReply(payload);
