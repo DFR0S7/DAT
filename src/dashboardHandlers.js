@@ -255,7 +255,8 @@ export async function handleDashboardCommand(interaction) {
   // Edit the existing dashboard message in place if one exists in this channel
   const { data: cfg } = await supabase.from('dashboard_config').select('message_id, channel_id').eq('user_id', userId).single();
   if (cfg?.message_id && cfg.channel_id === interaction.channelId) {
-    const existing = await interaction.channel.messages.fetch(cfg.message_id).catch(() => null);
+    const channel = interaction.channel ?? await interaction.client.channels.fetch(interaction.channelId).catch(() => null);
+    const existing = channel ? await channel.messages.fetch(cfg.message_id).catch(() => null) : null;
     if (existing) {
       await existing.edit(payload);
       await interaction.deleteReply().catch(() => {});
