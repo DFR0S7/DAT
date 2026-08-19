@@ -244,11 +244,14 @@ async function buildComponents(userId, state, pageSlice = [], positionCounts = [
 
 export async function handleDashboardCommand(interaction) {
   const userId = interaction.user.id;
+  console.log(`[dashboard] command received — user ${userId} at ${new Date().toISOString()}`);
+
   if (interaction.guild) {
     return interaction.reply({ content: '👋 This is a DM-only bot. Send me a direct message to use it!', flags: MessageFlags.Ephemeral });
   }
 
   await interaction.deferReply();
+  console.log(`[dashboard] deferReply succeeded — user ${userId}`);
   getState(userId).tab = 'seasons'; // always open fresh on Seasons
   const payload = await buildDashboardPayload(userId);
 
@@ -259,12 +262,14 @@ export async function handleDashboardCommand(interaction) {
     const existing = channel ? await channel.messages.fetch(cfg.message_id).catch(() => null) : null;
     if (existing) {
       await existing.edit(payload);
+      console.log(`[dashboard] edited existing message — user ${userId}`);
       await interaction.deleteReply().catch(() => {});
       return;
     }
   }
 
   const sent = await interaction.editReply(payload);
+  console.log(`[dashboard] sent new message — user ${userId}`);
   await supabase.from('dashboard_config')
     .upsert({ user_id: userId, message_id: sent.id, channel_id: interaction.channelId }, { onConflict: 'user_id' });
 }
