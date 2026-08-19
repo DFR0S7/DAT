@@ -389,6 +389,21 @@ export async function handleRosterCommand(interaction) {
     return interaction.editReply({ content: `✅ **${player.name}** moved from recruiting to the active roster.` });
   }
 
+  if (action === 'wipe') {
+    const confirm = interaction.options.getBoolean('confirm');
+    if (confirm !== true) {
+      return interaction.editReply({
+        content: `⚠️ This deletes **every player** (roster + recruiting) for **${dynastyName}** — can't be undone.\nRe-run with **confirm:True** to actually do it.`,
+      });
+    }
+
+    const { count } = await supabase.from('dynasty_roster')
+      .select('id', { count: 'exact', head: true }).eq('user_id', userId).eq('dynasty_name', dynastyName);
+
+    await supabase.from('dynasty_roster').delete().eq('user_id', userId).eq('dynasty_name', dynastyName);
+    return interaction.editReply({ content: `🗑️ Wiped ${count ?? 0} player${count === 1 ? '' : 's'} from **${dynastyName}**. Ready for a fresh import.` });
+  }
+
   if (action === 'remove') {
     const name = interaction.options.getString('name');
     const pos  = interaction.options.getString('pos');
