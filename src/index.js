@@ -296,31 +296,36 @@ setInterval(pingSupabase, 24 * 60 * 60 * 1000);
 client.on('interactionCreate', async (interaction) => {
   try {
     if (interaction.isAutocomplete()) {
-      if (interaction.commandName === 'roster') return handleRosterAutocomplete(interaction);
-      return interaction.respond([]);
+      if (interaction.commandName === 'roster') { await handleRosterAutocomplete(interaction); return; }
+      await interaction.respond([]);
+      return;
     }
     if (interaction.isChatInputCommand()) {
       const { commandName } = interaction;
-      if (commandName === 'dynasty')   return handleDynastyCommand(interaction);
-      if (commandName === 'season')    return handleSeasonCommand(interaction);
-      if (commandName === 'roster')    return handleRosterCommand(interaction);
-      if (commandName === 'needs')     return handleNeedsCommand(interaction);
-      if (commandName === 'dashboard') return handleDashboardCommand(interaction);
-      return handleCommand(interaction, client);
+      if (commandName === 'dynasty')   { await handleDynastyCommand(interaction); return; }
+      if (commandName === 'season')    { await handleSeasonCommand(interaction); return; }
+      if (commandName === 'roster')    { await handleRosterCommand(interaction); return; }
+      if (commandName === 'needs')     { await handleNeedsCommand(interaction); return; }
+      if (commandName === 'dashboard') { await handleDashboardCommand(interaction); return; }
+      await handleCommand(interaction, client);
+      return;
     }
     if (interaction.isButton()) {
       const handled = await handleDashboardButton(interaction);
       if (handled) return;
-      return handleButton(interaction);
+      await handleButton(interaction);
+      return;
     }
     if (interaction.isStringSelectMenu()) {
       const handled = await handleDashboardSelect(interaction);
       if (handled) return;
-      return handleSelect(interaction);
+      await handleSelect(interaction);
+      return;
     }
     if (interaction.isModalSubmit()) {
-      if (interaction.customId === 'roster_import_modal') return handleRosterModal(interaction);
-      return handleModal(interaction);
+      if (interaction.customId === 'roster_import_modal') { await handleRosterModal(interaction); return; }
+      await handleModal(interaction);
+      return;
     }
   } catch (err) {
     console.error('Interaction error:', err);
