@@ -10,7 +10,7 @@ import {
 import { supabase } from './db.js';
 import { getDynasties, getActiveDynasty, setActiveDynasty } from './dynastyHandlers.js';
 import { formatSeasonLine } from './seasonHandlers.js';
-import { formatPlayerCard } from './rosterHandlers.js';
+import { formatPlayerCard, NEED_POSITIONS } from './rosterHandlers.js';
 import { computeNeeds, formatNeedLine } from './needsHandlers.js';
 
 // Per-user in-memory nav state — same pattern as the existing activeEdits Map
@@ -19,7 +19,7 @@ import { computeNeeds, formatNeedLine } from './needsHandlers.js';
 const dashState = new Map();
 
 function getState(userId) {
-  if (!dashState.has(userId)) dashState.set(userId, { tab: 'seasons', seasonPage: 0, rosterPage: 0, recruitingPage: 0 });
+  if (!dashState.has(userId)) dashState.set(userId, { tab: 'seasons', seasonPage: 0, rosterPage: 0, recruitingPage: 0, rosterPos: null });
   return dashState.get(userId);
 }
 
@@ -58,16 +58,27 @@ async function buildRosterContent(userId, dynastyName, state) {
     .order('pos').order('name');
 
   if (!players?.length) {
-    return { text: 'No players tracked yet. Use `/roster action:Add` or `/roster action:Import`.', maxPage: 0 };
+    return { text: 'No players tracked yet. Use `/roster action:Add` or `/roster action:Import`.', maxPage: 0, positionCounts: [] };
   }
 
-  const maxPage = Math.max(0, Math.ceil(players.length / PLAYERS_PER_PAGE) - 1);
+  // Counts per position, in NEED_POSITIONS order, for the group-select menu
+  const positionCounts = NEED_POSITIONS
+    .map(pos => ({ pos, count: players.filter(p => p.pos === pos).length }))
+    .filter(pc => pc.count > 0);
+
+  if (!state.rosterPos) {
+    const text = positionCounts.map(pc => `**${pc.pos}** — ${pc.count} player${pc.count === 1 ? '' : 's'}`).join('\n');
+    return { text: `Pick a position group below.\n\n${text}`, maxPage: 0, positionCounts, overview: true };
+  }
+
+  const groupPlayers = players.filter(p => p.pos === state.rosterPos);
+  const maxPage = Math.max(0, Math.ceil(groupPlayers.length / PLAYERS_PER_PAGE) - 1);
   const page = Math.min(state.rosterPage, maxPage);
   state.rosterPage = page;
 
-  const slice = players.slice(page * PLAYERS_PER_PAGE, (page + 1) * PLAYERS_PER_PAGE);
+  const slice = groupPlayers.slice(page * PLAYERS_PER_PAGE, (page + 1) * PLAYERS_PER_PAGE);
   const text = slice.map(formatPlayerCard).join('\n\n');
-  return { text, maxPage, page, total: players.length, slice };
+  return { text, maxPage, page, total: groupPlayers.length, positionCounts, slice };
 }
 
 async function buildRecruitingContent(userId, dynastyName, state) {
@@ -132,15 +143,20 @@ async function buildDashboardPayload(userId) {
   const tierLine = (dynRow?.show_tier_ladder && latestSeason?.tier_num) ? `Tier ${latestSeason.tier_num}` : null;
   const subtitle = [prestigeLine, tierLine].filter(Boolean).join(' · ');
 
-  let body, footer = '', pageSlice = [];
+  let body, footer = '', pageSlice = [], positionCounts = [];
   if (state.tab === 'seasons') {
     const r = await buildSeasonsContent(userId, dynastyName, state);
     body = `🏆 **Season Ledger**\n\n${r.text}`;
     if (r.total) footer = `\n\n-# Page ${r.page + 1} of ${r.maxPage + 1} · ${r.total} season${r.total === 1 ? '' : 's'}`;
   } else if (state.tab === 'roster') {
     const r = await buildRosterContent(userId, dynastyName, state);
-    body = `👥 **Roster**\n\n${r.text}`;
-    if (r.total) footer = `\n\n-# Page ${r.page + 1} of ${r.maxPage + 1} · ${r.total} player${r.total === 1 ? '' : 's'}`;
+    positionCounts = r.positionCounts ?? [];
+    if (r.overview) {
+      body = `👥 **Roster**\n\n${r.text}`;
+    } else {
+      body = `👥 **Roster — ${state.rosterPos ?? ''}**\n\n${r.text}`;
+      if (r.total) footer = `\n\n-# Page ${r.page + 1} of ${r.maxPage + 1} · ${r.total} player${r.total === 1 ? '' : 's'} at ${state.rosterPos}`;
+    }
   } else if (state.tab === 'recruiting') {
     const r = await buildRecruitingContent(userId, dynastyName, state);
     body = `🎯 **Recruiting Targets**\n\n${r.text}`;
@@ -159,19 +175,32 @@ async function buildDashboardPayload(userId) {
   const header = `**${dynastyName}**${subtitle ? `\n-# ${subtitle}` : ''}`;
   const content = `${header}\n\n${body}${footer}`;
 
-  return { content, components: await buildComponents(userId, state, pageSlice) };
+  return { content, components: await buildComponents(userId, state, pageSlice, positionCounts) };
 }
 
-async function buildComponents(userId, state, pageSlice = []) {
+async function buildComponents(userId, state, pageSlice = [], positionCounts = []) {
   const rows = [];
 
-  // Pagination row (only where relevant)
-  if (state.tab === 'seasons' || state.tab === 'roster' || state.tab === 'recruiting') {
+  // Pagination row — for roster, only once a position group is selected
+  if (state.tab === 'seasons' || state.tab === 'recruiting' || (state.tab === 'roster' && state.rosterPos)) {
     const pageKey = state.tab === 'seasons' ? 'seasonPage' : state.tab === 'roster' ? 'rosterPage' : 'recruitingPage';
     rows.push(new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId(`dash_page_${state.tab}_prev`).setLabel('◀ Prev').setStyle(ButtonStyle.Secondary)
         .setDisabled(state[pageKey] === 0),
       new ButtonBuilder().setCustomId(`dash_page_${state.tab}_next`).setLabel('Next ▶').setStyle(ButtonStyle.Secondary),
+    ));
+  }
+
+  // Position-group select menu — always visible on the Roster tab so you can
+  // switch groups directly without backing out to the overview first
+  if (state.tab === 'roster' && positionCounts.length) {
+    rows.push(new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder().setCustomId('dash_roster_pos_select').setPlaceholder('Choose a position group…')
+        .addOptions([
+          new StringSelectMenuOptionBuilder().setLabel('— All positions (overview) —').setValue('ALL'),
+          ...positionCounts.map(pc => new StringSelectMenuOptionBuilder()
+            .setLabel(`${pc.pos} (${pc.count})`).setValue(pc.pos)),
+        ])
     ));
   }
 
@@ -266,6 +295,17 @@ export async function handleDashboardButton(interaction) {
 export async function handleDashboardSelect(interaction) {
   const userId = interaction.user.id;
 
+  if (interaction.customId === 'dash_roster_pos_select') {
+    await interaction.deferUpdate();
+    const state = getState(userId);
+    const chosen = interaction.values[0];
+    state.rosterPos = chosen === 'ALL' ? null : chosen;
+    state.rosterPage = 0;
+    const payload = await buildDashboardPayload(userId);
+    await interaction.editReply(payload);
+    return true;
+  }
+
   if (interaction.customId === 'dash_commit_select') {
     await interaction.deferUpdate();
     const rowId = interaction.values[0];
@@ -297,6 +337,7 @@ export async function handleDashboardSelect(interaction) {
   state.seasonPage = 0;
   state.rosterPage = 0;
   state.recruitingPage = 0;
+  state.rosterPos = null;
 
   const payload = await buildDashboardPayload(userId);
   await interaction.editReply(payload);

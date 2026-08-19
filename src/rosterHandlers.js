@@ -41,20 +41,69 @@ function parseClassYear(raw) {
   return base || "FR";
 }
 
+// Canonical column order matching the game's own export — used both to parse
+// attribute columns by name (rather than fixed index, since which attributes
+// are present varies by position group) and to order them on export.
+const ATTR_ORDER = [
+  "SPD","ACC","AGI","COD","STR","AWR","CAR","BCV","JMP","STA","INJ","TGH","BTK","TRK","SFA","JKM",
+  "CTH","CIT","SPC","SRR","MRR","DRR","RLS","THP","SAC","MAC","DAC","TUP","RUN","PAC","BSK",
+  "RBK","PBK","PBP","PBF","RBP","RBF","LBK","IBL","TAK","HPW","PUR","PRC","BSH","PMV","FMV","ZCV","MCV","PRS",
+];
+
+const ATTR_LABELS = {
+  SPD: 'Speed', ACC: 'Acceleration', AGI: 'Agility', COD: 'Change of Direction', STR: 'Strength',
+  AWR: 'Awareness', CAR: 'Carrying', BCV: 'Ball Carrier Vision', JMP: 'Jumping', STA: 'Stamina',
+  INJ: 'Injury', TGH: 'Toughness', BTK: 'Break Tackle', TRK: 'Trucking', SFA: 'Spin Move', JKM: 'Juke Move',
+  CTH: 'Catching', CIT: 'Catch in Traffic', SPC: 'Spectacular Catch', SRR: 'Short Route Running',
+  MRR: 'Med Route Running', DRR: 'Deep Route Running', RLS: 'Release', THP: 'Throw Power',
+  SAC: 'Short Accuracy', MAC: 'Medium Accuracy', DAC: 'Deep Accuracy', TUP: 'Throw Under Pressure',
+  RUN: 'Run Block', PAC: 'Play Action', BSK: 'Break Sack', RBK: 'Run Block', PBK: 'Pass Block',
+  PBP: 'Pass Block Power', PBF: 'Pass Block Finesse', RBP: 'Run Block Power', RBF: 'Run Block Finesse',
+  LBK: 'Lead Block', IBL: 'Impact Block', TAK: 'Tackle', HPW: 'Hit Power', PUR: 'Pursuit',
+  PRC: 'Play Recognition', BSH: 'Block Shedding', PMV: 'Power Move', FMV: 'Finesse Move',
+  ZCV: 'Zone Coverage', MCV: 'Man Coverage', PRS: 'Press',
+};
+
 function parseRosterCSV(text) {
   const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
   const players = [];
+  let headers = null;
+
   for (const line of lines) {
     const cols = line.split(",");
+    const col1 = (cols[1] || '').trim().toUpperCase();
+
+    // Header row (may repeat mid-paste, e.g. offense/defense sections) —
+    // capture it so later rows know which column is which attribute.
+    if (col1 === 'NAME') {
+      headers = cols.map(h => h.trim().toUpperCase());
+      continue;
+    }
+
     const name = (cols[1] || "").trim();
+    if (!name) continue;
     const year = (cols[2] || "").trim();
     const posRaw = (cols[3] || "").trim().toUpperCase();
     const ovr = (cols[4] || "").trim();
-    if (!name || name.toUpperCase() === "NAME") continue; // skip header rows
     if (!posRaw) continue;
+
     const pos = CSV_POS_MAP[posRaw] || posRaw;
     const overall = Number(ovr) || 0;
-    players.push({ name, classYear: parseClassYear(year), pos, overall });
+
+    // Everything from column 5 onward is an attribute — named via the header
+    // row if we've seen one, otherwise skipped (can't know what it is).
+    const attributes = {};
+    if (headers) {
+      for (let i = 5; i < cols.length; i++) {
+        const key = headers[i];
+        const raw = (cols[i] || '').trim();
+        if (!key || raw === '') continue;
+        const num = Number(raw);
+        attributes[key] = Number.isNaN(num) ? raw : num;
+      }
+    }
+
+    players.push({ name, classYear: parseClassYear(year), pos, overall, attributes });
   }
   return players;
 }
@@ -134,6 +183,13 @@ export function formatPlayerCard(p) {
 
 export async function handleRosterAutocomplete(interaction) {
   const focused = interaction.options.getFocused(true);
+
+  if (focused.name === 'attr_key') {
+    const typed = (focused.value ?? '').trim().toUpperCase();
+    const matches = ATTR_ORDER.filter(k => !typed || k.includes(typed) || (ATTR_LABELS[k] ?? '').toUpperCase().includes(typed));
+    return interaction.respond(matches.slice(0, 25).map(k => ({ name: `${k} — ${ATTR_LABELS[k] ?? k}`, value: k })));
+  }
+
   if (focused.name !== 'name') return interaction.respond([]);
 
   const action = interaction.options.getString('action');
@@ -295,10 +351,22 @@ export async function handleRosterCommand(interaction) {
     maybeSet('recruit_type', interaction.options.getString('recruit_type'));
     maybeSet('notes', interaction.options.getString('notes'));
 
+    // Single-attribute correction — merges into the existing JSONB rather than
+    // replacing it, since we're only fixing one bad value out of ~50.
+    const attrKey = interaction.options.getString('attr_key');
+    const attrValue = interaction.options.getInteger('attr_value');
+    if (attrKey && attrValue !== null) {
+      const key = attrKey.trim().toUpperCase();
+      updates.attributes = { ...(matches[0].attributes ?? {}), [key]: attrValue };
+    } else if (attrKey && attrValue === null) {
+      return interaction.editReply({ content: `Provide **attr_value** along with **attr_key** to set an attribute.` });
+    }
+
     if (!Object.keys(updates).length) return interaction.editReply({ content: 'No fields provided to update.' });
 
     await supabase.from('dynasty_roster').update(updates).eq('id', matches[0].id);
-    return interaction.editReply({ content: `✅ Updated **${matches[0].name}**.` });
+    const attrNote = attrKey && attrValue !== null ? ` (${attrKey.toUpperCase()} → ${attrValue})` : '';
+    return interaction.editReply({ content: `✅ Updated **${matches[0].name}**${attrNote}.` });
   }
 
   if (action === 'commit') {
@@ -372,6 +440,7 @@ export async function handleRosterModal(interaction) {
     name: p.name, pos: p.pos, class_year: p.classYear, overall: p.overall,
     dev_trait: 'Normal', flight_risk: flightRisk, nil_offered: false, nil_amount: null,
     status, recruit_type: recruitType, notes: null,
+    attributes: p.attributes ?? {},
   }));
 
   const { error } = await supabase.from('dynasty_roster').insert(rows);
