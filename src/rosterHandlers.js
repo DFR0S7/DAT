@@ -193,7 +193,7 @@ export async function handleRosterAutocomplete(interaction) {
   if (focused.name !== 'name') return interaction.respond([]);
 
   const action = interaction.options.getString('action');
-  if (!['edit', 'remove', 'commit'].includes(action)) return interaction.respond([]);
+  if (!['edit', 'remove', 'commit', 'attributes'].includes(action)) return interaction.respond([]);
 
   const userId = interaction.user.id;
   const dynastyName = await getActiveDynasty(userId);
@@ -367,6 +367,38 @@ export async function handleRosterCommand(interaction) {
     await supabase.from('dynasty_roster').update(updates).eq('id', matches[0].id);
     const attrNote = attrKey && attrValue !== null ? ` (${attrKey.toUpperCase()} → ${attrValue})` : '';
     return interaction.editReply({ content: `✅ Updated **${matches[0].name}**${attrNote}.` });
+  }
+
+  if (action === 'attributes') {
+    const name = interaction.options.getString('name');
+    const pos  = interaction.options.getString('pos');
+    if (!name) return interaction.editReply({ content: 'Please provide the **name** of the player to view.' });
+
+    const matches = await findPlayerByIdOrName(userId, dynastyName, name, pos);
+    if (!matches.length) return interaction.editReply({ content: `No player matching **${name}**${pos ? ` at ${pos}` : ''} found.` });
+    if (matches.length > 1) {
+      return interaction.editReply({ content: `Multiple players match **${name}**: ${matches.map(m => m.pos).join(', ')}. Re-run with **pos** to disambiguate.` });
+    }
+
+    const player = matches[0];
+    const attrs = player.attributes ?? {};
+    const keys = Object.keys(attrs);
+
+    if (!keys.length) {
+      return interaction.editReply({ content: `**${player.name}** (${player.pos}) has no attributes stored yet — import a CSV or set them with \`/roster action:Edit attr_key:... attr_value:...\`.` });
+    }
+
+    // Canonical order first, then anything unrecognized appended alphabetically
+    const ordered = [...ATTR_ORDER.filter(k => keys.includes(k)), ...keys.filter(k => !ATTR_ORDER.includes(k)).sort()];
+    const lines = ordered.map(k => `${k} (${ATTR_LABELS[k] ?? k}): **${attrs[k]}**`);
+
+    const header = `📊 **${player.name}** — ${player.pos} · OVR ${player.overall}\n\n`;
+    let content = header + lines.join('\n');
+    if (content.length > 1900) {
+      // Extremely unlikely with ~50 attrs, but stay safe under Discord's cap
+      content = header + lines.slice(0, 40).join('\n') + `\n\n-# ${lines.length - 40} more not shown.`;
+    }
+    return interaction.editReply({ content });
   }
 
   if (action === 'commit') {

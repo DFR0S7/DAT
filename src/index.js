@@ -120,14 +120,15 @@ const commands = [
     .setDMPermission(true)
     .addStringOption(o => o.setName('action').setDescription('What to do').setRequired(true)
       .addChoices(
-        { name: 'Add player',       value: 'add'    },
-        { name: 'View roster',      value: 'list'   },
-        { name: 'Commit to roster', value: 'commit' },
-        { name: 'Edit player',      value: 'edit'   },
-        { name: 'Remove player',    value: 'remove' },
-        { name: 'Wipe ALL players', value: 'wipe'   },
-        { name: 'Import CSV',       value: 'import' },
-        { name: 'Export CSV',       value: 'export' },
+        { name: 'Add player',       value: 'add'        },
+        { name: 'View roster',      value: 'list'       },
+        { name: 'View attributes',  value: 'attributes' },
+        { name: 'Commit to roster', value: 'commit'     },
+        { name: 'Edit player',      value: 'edit'       },
+        { name: 'Remove player',    value: 'remove'     },
+        { name: 'Wipe ALL players', value: 'wipe'       },
+        { name: 'Import CSV',       value: 'import'     },
+        { name: 'Export CSV',       value: 'export'     },
       ))
     .addBooleanOption(o => o.setName('confirm').setDescription('Required for action:Wipe — set True to actually delete everyone').setRequired(false))
     .addStringOption(o => o.setName('pos').setDescription('Position — pick this first to filter the name suggestions').setRequired(false)
