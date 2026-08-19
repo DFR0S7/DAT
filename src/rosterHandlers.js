@@ -24,7 +24,7 @@ const CSV_POS_MAP = {
   LT: "OT", RT: "OT", OT: "OT",
   LG: "OG", RG: "OG", OG: "OG",
   C: "C",
-  DE: "DE", RE: "DE", LE: "DE",
+  DE: "DE", RE: "DE", LE: "DE", LEDG: "DE", REDG: "DE", EDGE: "DE",
   DT: "DT",
   OLB: "OLB", ROLB: "OLB", LOLB: "OLB",
   MLB: "MLB", LB: "MLB",
