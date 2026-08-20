@@ -255,17 +255,14 @@ export async function handleDashboardCommand(interaction) {
   getState(userId).tab = 'seasons'; // always open fresh on Seasons
   const payload = await buildDashboardPayload(userId);
 
-  // Edit the existing dashboard message in place if one exists in this channel
+  // Delete the old dashboard message (if any) and always send a fresh one at
+  // the bottom of the chat — editing in place left it stranded wherever it
+  // was originally posted, which is confusing to find again on mobile.
   const { data: cfg } = await supabase.from('dashboard_config').select('message_id, channel_id').eq('user_id', userId).single();
   if (cfg?.message_id && cfg.channel_id === interaction.channelId) {
     const channel = interaction.channel ?? await interaction.client.channels.fetch(interaction.channelId).catch(() => null);
-    const existing = channel ? await channel.messages.fetch(cfg.message_id).catch(() => null) : null;
-    if (existing) {
-      await existing.edit(payload);
-      console.log(`[dashboard] edited existing message — user ${userId}`);
-      await interaction.deleteReply().catch(() => {});
-      return;
-    }
+    const old = channel ? await channel.messages.fetch(cfg.message_id).catch(() => null) : null;
+    if (old) await old.delete().catch(() => {});
   }
 
   const sent = await interaction.editReply(payload);

@@ -353,10 +353,13 @@ client.on('guildMemberAdd', async (member) => {
   }
 });
 
-client.on('messageCreate', async (message) => {
-  try { await handleMessage(message); }
-  catch (err) { console.error('Message error:', err); }
-});
+// Onboarding-via-plain-text was for the old bot setup flow and is disabled —
+// all functionality now runs through slash commands, so plain DM messages
+// no longer trigger anything.
+// client.on('messageCreate', async (message) => {
+//   try { await handleMessage(message); }
+//   catch (err) { console.error('Message error:', err); }
+// });
 
 // ── Process error guards ───────────────────────────────────────────────────────
 process.on('uncaughtException',  err => console.error('Uncaught exception:', err.message));
