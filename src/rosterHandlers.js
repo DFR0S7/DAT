@@ -108,7 +108,15 @@ function parseRosterCSV(text) {
   return players;
 }
 
-const EXPORT_HEADERS = ['name', 'pos', 'class_year', 'overall', 'dev_trait', 'flight_risk', 'nil_offered', 'nil_amount', 'status', 'recruit_type', 'notes'];
+// Mirrors the game's own export shape so a file from `/roster action:Export`
+// can be pasted straight back into `/roster action:Import` without remapping
+// columns. Column 0 ("RS") isn't read by the parser — redshirt status travels
+// inside the YEAR cell as "(RS)" — but we still populate it for readability.
+function formatYearForExport(classYear) {
+  if (!classYear) return 'FR';
+  if (classYear.startsWith('RS-')) return `${classYear.slice(3)} (RS)`;
+  return classYear;
+}
 
 function toCSVField(val) {
   if (val === null || val === undefined) return '';
@@ -118,8 +126,31 @@ function toCSVField(val) {
 }
 
 function buildRosterCSV(players) {
-  const lines = [EXPORT_HEADERS.join(',')];
-  for (const p of players) lines.push(EXPORT_HEADERS.map(h => toCSVField(p[h])).join(','));
+  // Attribute columns = only the keys actually present across this export,
+  // canonical order first, so a WR-only export doesn't drag in 30 blank
+  // blocking columns.
+  const present = new Set();
+  players.forEach(p => Object.keys(p.attributes ?? {}).forEach(k => present.add(k)));
+  const attrHeaders = [
+    ...ATTR_ORDER.filter(k => present.has(k)),
+    ...[...present].filter(k => !ATTR_ORDER.includes(k)).sort(),
+  ];
+
+  const headers = ['RS', 'NAME', 'YEAR', 'POS', 'OVR', ...attrHeaders];
+  const lines = [headers.join(',')];
+
+  for (const p of players) {
+    const rs = (p.class_year ?? '').startsWith('RS-') ? 'RS' : '';
+    const row = [
+      rs,
+      toCSVField(p.name),
+      toCSVField(formatYearForExport(p.class_year)),
+      toCSVField(p.pos),
+      toCSVField(p.overall),
+      ...attrHeaders.map(k => toCSVField((p.attributes ?? {})[k] ?? '')),
+    ];
+    lines.push(row.join(','));
+  }
   return lines.join('\n');
 }
 

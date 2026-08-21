@@ -317,7 +317,7 @@ export async function handleDashboardSelect(interaction) {
     const state = getState(userId);
     // Stay on Recruiting tab; if this was the last one on the page, back up a page
     const dynastyName = await getActiveDynasty(userId);
-    const { data: remaining } = await supabase
+    const { count: remaining } = await supabase
       .from('dynasty_roster').select('id', { count: 'exact', head: true })
       .eq('user_id', userId).eq('dynasty_name', dynastyName).in('status', ['Target', 'Signed']);
     if (remaining !== null && state.recruitingPage > 0 && state.recruitingPage * PLAYERS_PER_PAGE >= (remaining ?? 0)) {
