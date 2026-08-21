@@ -159,7 +159,9 @@ const commands = [
         { name: 'FP — portal future player (FR/SO)',   value: 'FP' },
         { name: 'TP — portal immediate starter (JR)',  value: 'TP' },
       ))
-    .addStringOption(o => o.setName('notes').setDescription('Notes').setRequired(false)),
+    .addStringOption(o => o.setName('notes').setDescription('Notes').setRequired(false))
+    .addStringOption(o => o.setName('attr_key').setDescription('Attribute to correct (edit only — type to search, e.g. SPD, AWR)').setRequired(false).setAutocomplete(true))
+    .addIntegerOption(o => o.setName('attr_value').setDescription('New value for attr_key (0-99)').setRequired(false).setMinValue(0).setMaxValue(99)),
 
   new SlashCommandBuilder()
     .setName('needs')
