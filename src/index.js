@@ -157,11 +157,9 @@ const commands = [
       .addChoices(
         { name: 'HS — high school recruit',           value: 'HS' },
         { name: 'FP — portal future player (FR/SO)',   value: 'FP' },
-        { name: 'TP — portal immediate starter (JR)',  value: 'TP' },
+        { name: 'IS — portal immediate starter (JR)',  value: 'IS' },
       ))
-    .addStringOption(o => o.setName('notes').setDescription('Notes').setRequired(false))
-    .addStringOption(o => o.setName('attr_key').setDescription('Attribute to correct (edit only — type to search, e.g. SPD, AWR)').setRequired(false).setAutocomplete(true))
-    .addIntegerOption(o => o.setName('attr_value').setDescription('New value for attr_key (0-99)').setRequired(false).setMinValue(0).setMaxValue(99)),
+    .addStringOption(o => o.setName('notes').setDescription('Notes').setRequired(false)),
 
   new SlashCommandBuilder()
     .setName('needs')
@@ -180,7 +178,7 @@ const commands = [
     .addStringOption(o => o.setName('portal_type').setDescription('Portal need type').setRequired(false)
       .addChoices(
         { name: 'FP — future player (FR/SO)',   value: 'FP' },
-        { name: 'TP — immediate starter (JR)',  value: 'TP' },
+        { name: 'IS — immediate starter (JR)',  value: 'IS' },
       ))
     .addStringOption(o => o.setName('period').setDescription('Recruiting window (for action:mark-updated)').setRequired(false)
       .addChoices(
