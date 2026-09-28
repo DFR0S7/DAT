@@ -19,7 +19,7 @@ import { computeNeeds, formatNeedLine } from './needsHandlers.js';
 const dashState = new Map();
 
 function getState(userId) {
-  if (!dashState.has(userId)) dashState.set(userId, { tab: 'seasons', seasonPage: 0, rosterPage: 0, recruitingPage: 0, rosterPos: null });
+  if (!dashState.has(userId)) dashState.set(userId, { tab: 'seasons', seasonPage: 0, rosterPage: 0, recruitingPage: 0, rosterPos: null, confirmReset: false });
   return dashState.get(userId);
 }
 
@@ -163,8 +163,12 @@ async function buildDashboardPayload(userId) {
     if (r.total) footer = `\n\n-# Page ${r.page + 1} of ${r.maxPage + 1} · ${r.total} target${r.total === 1 ? '' : 's'} · pick one below to commit to the roster`;
     pageSlice = r.slice ?? [];
   } else if (state.tab === 'needs') {
-    const r = await buildNeedsContent(userId, dynastyName);
-    body = `📋 **Roster Needs**\n\n${r.text}`;
+    if (state.confirmReset) {
+      body = `⚠️ **Reset needs for ${dynastyName}?**\n\nThis clears every HS and portal need back to 0 and wipes the "updated" date, so you can enter a fresh baseline for the new season.\n\n-# Your roster, recruits, and season history are not touched.`;
+    } else {
+      const r = await buildNeedsContent(userId, dynastyName);
+      body = `📋 **Roster Needs**\n\n${r.text}`;
+    }
   } else if (state.tab === 'switch') {
     const dynasties = await getDynasties(userId);
     body = dynasties.length
@@ -224,6 +228,20 @@ async function buildComponents(userId, state, pageSlice = [], positionCounts = [
     }
   }
 
+  // Needs tab: Reset button, or Confirm/Cancel once Reset has been pressed
+  if (state.tab === 'needs') {
+    if (state.confirmReset) {
+      rows.push(new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('dash_needs_reset_confirm').setLabel('✅ Yes, reset needs').setStyle(ButtonStyle.Danger),
+        new ButtonBuilder().setCustomId('dash_needs_reset_cancel').setLabel('Cancel').setStyle(ButtonStyle.Secondary),
+      ));
+    } else {
+      rows.push(new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('dash_needs_reset').setLabel('🔄 Reset for new season').setStyle(ButtonStyle.Secondary),
+      ));
+    }
+  }
+
   // Tab row
   const mk = (id, label, tab) => new ButtonBuilder().setCustomId(id).setLabel(label)
     .setStyle(state.tab === tab ? ButtonStyle.Success : ButtonStyle.Secondary);
@@ -278,7 +296,26 @@ export async function handleDashboardButton(interaction) {
 
   const state = getState(userId);
 
-  if (interaction.customId === 'dash_tab_seasons') state.tab = 'seasons';
+  // Any button other than the reset flow itself cancels a pending confirmation,
+  // so tapping a different tab never leaves a stale "are you sure?" behind.
+  if (!interaction.customId.startsWith('dash_needs_reset')) state.confirmReset = false;
+
+  if (interaction.customId === 'dash_needs_reset') {
+    state.confirmReset = true;
+  } else if (interaction.customId === 'dash_needs_reset_cancel') {
+    state.confirmReset = false;
+  } else if (interaction.customId === 'dash_needs_reset_confirm') {
+    state.confirmReset = false;
+    const dynastyName = await getActiveDynasty(userId);
+    if (dynastyName) {
+      // Missing rows read as 0/0/FP everywhere needs are computed, so deleting
+      // the rows is a clean reset.
+      await supabase.from('dynasty_needs').delete().eq('user_id', userId).eq('dynasty_name', dynastyName);
+      await supabase.from('dynasties').update({ needs_updated: null })
+        .eq('user_id', userId).eq('dynasty_name', dynastyName);
+      console.log(`[dashboard] needs reset — user ${userId}, dynasty ${dynastyName}`);
+    }
+  } else if (interaction.customId === 'dash_tab_seasons') state.tab = 'seasons';
   else if (interaction.customId === 'dash_tab_roster') state.tab = 'roster';
   else if (interaction.customId === 'dash_tab_recruiting') state.tab = 'recruiting';
   else if (interaction.customId === 'dash_tab_needs') state.tab = 'needs';
@@ -317,7 +354,7 @@ export async function handleDashboardSelect(interaction) {
     const state = getState(userId);
     // Stay on Recruiting tab; if this was the last one on the page, back up a page
     const dynastyName = await getActiveDynasty(userId);
-    const { count: remaining } = await supabase
+    const { data: remaining } = await supabase
       .from('dynasty_roster').select('id', { count: 'exact', head: true })
       .eq('user_id', userId).eq('dynasty_name', dynastyName).in('status', ['Target', 'Signed']);
     if (remaining !== null && state.recruitingPage > 0 && state.recruitingPage * PLAYERS_PER_PAGE >= (remaining ?? 0)) {
