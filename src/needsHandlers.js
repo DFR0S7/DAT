@@ -4,10 +4,15 @@
 // artifact's NeedsPanel: Signed players fill a slot, Target players show as
 // "pursuing" but don't reduce the count yet.
 
-import { MessageFlags } from 'discord.js';
+import {
+  ActionRowBuilder, ModalBuilder, TextInputBuilder, TextInputStyle,
+  StringSelectMenuBuilder, StringSelectMenuOptionBuilder, MessageFlags,
+} from 'discord.js';
 import { supabase } from './db.js';
-import { requireActiveDynasty } from './dynastyHandlers.js';
+import { requireActiveDynasty, getActiveDynasty } from './dynastyHandlers.js';
 import { NEED_POSITIONS } from './rosterHandlers.js';
+
+const NEED_PORTAL_TYPES = ['FP', 'IS'];
 
 export async function computeNeeds(userId, dynastyName) {
   const { data: needRows } = await supabase
@@ -55,6 +60,98 @@ export function formatNeedLine(n) {
   return `${flag} **${n.pos}** — ${parts.join(' · ')}`;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// INTERACTIVE SET FLOW
+//   /needs action:set → position list (each entry shows its current needs)
+//   pick a position   → form prefilled with that position's current numbers
+//   save              → list refreshes in place so you can go straight to the next one
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function buildPositionPicker(userId, dynastyName, notice = '') {
+  const needs = await computeNeeds(userId, dynastyName);
+  const options = needs.map(n => {
+    const portal = `Portal ${n.portalNeed}${n.portalNeed > 0 ? ` (${n.portalType})` : ''}`;
+    return new StringSelectMenuOptionBuilder()
+      .setLabel(n.pos).setDescription(`HS ${n.hsNeed} · ${portal}`).setValue(n.pos);
+  });
+
+  const content = `📋 **Set needs — ${dynastyName}**\n${notice ? `${notice}\n` : ''}\nPick a position to edit.`;
+  const components = [new ActionRowBuilder().addComponents(
+    new StringSelectMenuBuilder().setCustomId('needs_pos_select').setPlaceholder('Choose a position…').addOptions(options)
+  )];
+  return { content, components };
+}
+
+// Position picked → open the form. showModal must be the FIRST response to this
+// interaction, so no deferring before it.
+export async function handleNeedsSelect(interaction) {
+  if (interaction.customId !== 'needs_pos_select') return false;
+  const userId = interaction.user.id;
+
+  const dynastyName = await getActiveDynasty(userId);
+  if (!dynastyName) {
+    await interaction.reply({ content: `No active dynasty found — run \`/dynasty action:Switch\` first.`, flags: MessageFlags.Ephemeral });
+    return true;
+  }
+
+  const pos = interaction.values[0];
+  const { data: row } = await supabase.from('dynasty_needs').select('hs_need, portal_need, portal_type')
+    .eq('user_id', userId).eq('dynasty_name', dynastyName).eq('pos', pos).maybeSingle();
+
+  const field = (id, label, value, maxLength) => new ActionRowBuilder().addComponents(
+    new TextInputBuilder().setCustomId(id).setLabel(label).setStyle(TextInputStyle.Short)
+      .setRequired(true).setValue(String(value)).setMaxLength(maxLength)
+  );
+
+  const modal = new ModalBuilder().setCustomId(`needs_set_modal:${pos}`).setTitle(`Needs — ${pos}`);
+  modal.addComponents(
+    field('hs_need', 'HS recruits needed', row?.hs_need ?? 0, 2),
+    field('portal_need', 'Portal recruits needed', row?.portal_need ?? 0, 2),
+    field('portal_type', 'Portal type (FP or IS)', row?.portal_type ?? 'FP', 2),
+  );
+  await interaction.showModal(modal);
+  return true;
+}
+
+// Form submitted → validate, save, refresh the list in the original message.
+export async function handleNeedsModal(interaction) {
+  if (!interaction.customId.startsWith('needs_set_modal:')) return false;
+  const pos = interaction.customId.slice('needs_set_modal:'.length);
+  const userId = interaction.user.id;
+
+  const hs = Number(interaction.fields.getTextInputValue('hs_need').trim());
+  const portal = Number(interaction.fields.getTextInputValue('portal_need').trim());
+  const type = interaction.fields.getTextInputValue('portal_type').trim().toUpperCase();
+
+  // Validate before deferring so a bad entry gets a private error and the list stays put
+  if (!Number.isInteger(hs) || hs < 0 || !Number.isInteger(portal) || portal < 0) {
+    await interaction.reply({ content: `Needs must be whole numbers, 0 or higher. Nothing was saved for **${pos}**.`, flags: MessageFlags.Ephemeral });
+    return true;
+  }
+  if (!NEED_PORTAL_TYPES.includes(type)) {
+    await interaction.reply({ content: `Portal type must be **FP** (future player) or **IS** (immediate starter). Nothing was saved for **${pos}**.`, flags: MessageFlags.Ephemeral });
+    return true;
+  }
+
+  const dynastyName = await getActiveDynasty(userId);
+  if (!dynastyName) {
+    await interaction.reply({ content: `No active dynasty found — run \`/dynasty action:Switch\` first.`, flags: MessageFlags.Ephemeral });
+    return true;
+  }
+
+  await interaction.deferUpdate();
+  const { error } = await supabase.from('dynasty_needs').upsert(
+    { user_id: userId, dynasty_name: dynastyName, pos, hs_need: hs, portal_need: portal, portal_type: type },
+    { onConflict: 'user_id,dynasty_name,pos' }
+  );
+
+  const notice = error
+    ? `⚠️ Couldn't save **${pos}**: ${error.message}`
+    : `✅ Saved **${pos}** — HS ${hs} · Portal ${portal}${portal > 0 ? ` (${type})` : ''}`;
+  await interaction.editReply(await buildPositionPicker(userId, dynastyName, notice));
+  return true;
+}
+
 export async function handleNeedsCommand(interaction) {
   const userId = interaction.user.id;
 
@@ -86,23 +183,7 @@ export async function handleNeedsCommand(interaction) {
   }
 
   if (action === 'set') {
-    const pos = interaction.options.getString('pos');
-    if (!pos) return interaction.editReply({ content: 'Please provide a **pos**.' });
-
-    const updates = { user_id: userId, dynasty_name: dynastyName, pos };
-    const hsNeed = interaction.options.getInteger('hs_need');
-    const portalNeed = interaction.options.getInteger('portal_need');
-    const portalType = interaction.options.getString('portal_type');
-    if (hsNeed !== null) updates.hs_need = hsNeed;
-    if (portalNeed !== null) updates.portal_need = portalNeed;
-    if (portalType !== null) updates.portal_type = portalType;
-
-    if (Object.keys(updates).length <= 3) {
-      return interaction.editReply({ content: 'Provide at least one of **hs_need**, **portal_need**, or **portal_type** to set.' });
-    }
-
-    await supabase.from('dynasty_needs').upsert(updates, { onConflict: 'user_id,dynasty_name,pos' });
-    return interaction.editReply({ content: `✅ Updated needs for **${pos}** in **${dynastyName}**.` });
+    return interaction.editReply(await buildPositionPicker(userId, dynastyName));
   }
 
   if (action === 'mark-updated') {

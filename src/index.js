@@ -7,7 +7,7 @@ import { supabase } from './db.js';
 import { handleSeasonCommand } from './seasonHandlers.js';
 import { handleRosterCommand, handleRosterModal, handleRosterAutocomplete } from './rosterHandlers.js';
 import { handleDynastyCommand } from './dynastyHandlers.js';
-import { handleNeedsCommand } from './needsHandlers.js';
+import { handleNeedsCommand, handleNeedsSelect, handleNeedsModal } from './needsHandlers.js';
 import { handleDashboardCommand, handleDashboardButton, handleDashboardSelect } from './dashboardHandlers.js';
 
 // ── Discord client ─────────────────────────────────────────────────────────────
@@ -173,15 +173,6 @@ const commands = [
         { name: 'Set a position', value: 'set'          },
         { name: 'Mark updated',   value: 'mark-updated' },
       ))
-    .addStringOption(o => o.setName('pos').setDescription('Position (for action:set)').setRequired(false)
-      .addChoices(...POS_CHOICES))
-    .addIntegerOption(o => o.setName('hs_need').setDescription('HS recruits needed').setRequired(false).setMinValue(0))
-    .addIntegerOption(o => o.setName('portal_need').setDescription('Portal recruits needed').setRequired(false).setMinValue(0))
-    .addStringOption(o => o.setName('portal_type').setDescription('Portal need type').setRequired(false)
-      .addChoices(
-        { name: 'FP — future player (FR/SO)',   value: 'FP' },
-        { name: 'IS — immediate starter (JR)',  value: 'IS' },
-      ))
     .addStringOption(o => o.setName('period').setDescription('Recruiting window (for action:mark-updated)').setRequired(false)
       .addChoices(
         { name: 'High school recruiting', value: 'HS' },
@@ -320,6 +311,7 @@ client.on('interactionCreate', async (interaction) => {
       return;
     }
     if (interaction.isStringSelectMenu()) {
+      if (await handleNeedsSelect(interaction)) return;
       const handled = await handleDashboardSelect(interaction);
       if (handled) return;
       await handleSelect(interaction);
@@ -327,6 +319,7 @@ client.on('interactionCreate', async (interaction) => {
     }
     if (interaction.isModalSubmit()) {
       if (interaction.customId === 'roster_import_modal') { await handleRosterModal(interaction); return; }
+      if (await handleNeedsModal(interaction)) return;
       await handleModal(interaction);
       return;
     }
